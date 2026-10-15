@@ -44,6 +44,13 @@ struct SettingsView: View {
         .padding()
         .frame(width: 420)
         .onAppear { load() }
+        .onChange(of: appState.session.isUnlocked) { _, unlocked in
+            if !unlocked {
+                pendingImported = nil
+                showReplaceConfirmation = false
+                passphrase = ""
+            }
+        }
         .onChange(of: autoLockMinutes) { _, _ in save() }
         .onChange(of: requireAuthForSensitive) { _, _ in save() }
         .onChange(of: showPreviews) { _, _ in save() }

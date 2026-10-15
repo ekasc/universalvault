@@ -58,7 +58,8 @@ public final class VaultSession: ObservableObject {
     }
 
     public func createNewVault() async throws {
-        _ = try await auth.authenticate(reason: "Create a new Universal Vault")
+        let createdAuth = try await auth.authenticate(reason: "Create a new Universal Vault")
+        guard createdAuth else { throw AuthError.failed("Authentication failed.") }
 
         let vaultExisted = storage.exists()
         let keyExists: Bool
@@ -99,7 +100,8 @@ public final class VaultSession: ObservableObject {
     }
 
     public func unlock() async throws {
-        _ = try await auth.authenticate(reason: "Unlock Universal Vault")
+        let unlockAuth = try await auth.authenticate(reason: "Unlock Universal Vault")
+        guard unlockAuth else { throw AuthError.failed("Authentication failed.") }
         let k: SymmetricKey
         do {
             k = try keyStore.loadKey(reason: "Unlock vault")

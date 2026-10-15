@@ -7,6 +7,9 @@ import CommonCrypto
 final class TestAuth: UserPresenceAuthenticating, @unchecked Sendable {
     func authenticate(reason: String) async throws -> Bool { true }
 }
+final class FalseAuth: UserPresenceAuthenticating, @unchecked Sendable {
+    func authenticate(reason: String) async throws -> Bool { false }
+}
 
 final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
     private var data: Data?
@@ -115,6 +118,38 @@ final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
         ]
         let data = try JSONSerialization.data(withJSONObject: dict)
         XCTAssertThrowsError(try VaultSession.importBackup(data, passphrase: "passphrase1234"))
+    }
+
+
+
+    @MainActor func testCreateVaultFalseAuthThrows() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let storage = try FileSystemVaultStorage(directory: url)
+        let session = VaultSession(storage: storage, keyStore: InMemoryKeyStore(), auth: FalseAuth())
+        do {
+            try await session.createNewVault()
+            XCTFail("False authentication should prevent vault creation")
+        } catch {
+            // expected
+        }
+        XCTAssertFalse(storage.exists())
+    }
+
+    @MainActor func testUnlockFalseAuthThrows() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let storage = try FileSystemVaultStorage(directory: url)
+        let keyStore = InMemoryKeyStore()
+        let first = VaultSession(storage: storage, keyStore: keyStore, auth: TestAuth())
+        try await first.createNewVault()
+        first.lock()
+        let second = VaultSession(storage: storage, keyStore: keyStore, auth: FalseAuth())
+        do {
+            try await second.unlock()
+            XCTFail("False authentication should prevent unlock")
+        } catch {
+            // expected
+        }
+        XCTAssertFalse(second.isUnlocked)
     }
 
 }

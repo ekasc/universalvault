@@ -55,7 +55,15 @@ public struct InsertionResult {
 public final class InsertionEngine {
     public init() {}
 
-    public func insert(
+    @MainActor private static func waitForActivation(pid: pid_t, deadline: Date) -> Bool {
+        while Date() < deadline {
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.016))
+        }
+        return NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+    }
+
+    @MainActor public func insert(
         value: String,
         into target: TargetHandle,
         originalBundleID: String?,
@@ -63,8 +71,8 @@ public final class InsertionEngine {
         transactionID: UUID,
         sessionGeneration: UUID,
         currentSessionGeneration: () -> UUID,
-        isTransactionActive: () -> Bool = { true }
-    ) -> InsertionResult {
+        isTransactionActive: @escaping () -> Bool = { true }
+    ) async -> InsertionResult {
         guard !value.isEmpty else { return InsertionResult(outcome: .failed, method: "none", error: .valueEmpty) }
         if !AccessibilityPermission.isTrusted() { return InsertionResult(outcome: .rejected, method: "none", error: .permissionDenied) }
 
@@ -135,12 +143,7 @@ public final class InsertionEngine {
             app.activate()
         }
         // Bounded, event-driven activation verification instead of arbitrary sleep.
-        let deadline = Date().addingTimeInterval(0.5)
-        while Date() < deadline {
-            if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { break }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.016))
-        }
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+        if !Self.waitForActivation(pid: pid, deadline: Date().addingTimeInterval(0.5)) {
             return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
         }
 
@@ -155,10 +158,10 @@ public final class InsertionEngine {
             return InsertionResult(outcome: .canceled, method: "none", error: .targetInvalid)
         }
 
-        return Self.postUnicodeKeyboard(value, target: target.element, pid: pid, axApp: axApp)
+        return await Self.postUnicodeKeyboard(value, target: target.element, pid: pid, axApp: axApp, isTransactionActive: isTransactionActive)
     }
 
-    private static func postUnicodeKeyboard(_ text: String, target: AXUIElement, pid: pid_t, axApp: AXUIElement) -> InsertionResult {
+    @MainActor private static func postUnicodeKeyboard(_ text: String, target: AXUIElement, pid: pid_t, axApp: AXUIElement, isTransactionActive: @escaping () -> Bool) async -> InsertionResult {
         let source = CGEventSource(stateID: .hidSystemState)
         let chunkSize = 20
         var index = text.startIndex
@@ -178,6 +181,14 @@ public final class InsertionEngine {
         }
 
         while index < text.endIndex {
+            // Cancel promptly without yielding a full chunk.
+            if !isTransactionActive() {
+                return InsertionResult(
+                    outcome: insertedAny ? .partial : .canceled,
+                    method: "cg-keyboard",
+                    error: .sessionChanged
+                )
+            }
             // Revalidate the transaction target before each event chunk.
             if !focusUnchanged() {
                 return InsertionResult(
@@ -202,7 +213,11 @@ public final class InsertionEngine {
             up.postToPid(pid)
             insertedAny = true
             if index < text.endIndex {
-                Thread.sleep(forTimeInterval: 0.01)
+                do {
+                    try await Task.sleep(nanoseconds: 10_000_000)
+                } catch {
+                    return InsertionResult(outcome: .partial, method: "cg-keyboard", error: .sessionChanged)
+                }
             }
         }
         return InsertionResult(outcome: .successUnverified, method: "cg-keyboard")

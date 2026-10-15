@@ -80,9 +80,19 @@ public final class AppState: ObservableObject {
 
     public func dismissPalette() {
         showPalette = false
+        activeOperationID = nil
         paletteTarget = nil
         PalettePanelController.shared?.hide()
         for w in NSApplication.shared.windows where w.title == "Quick Fill" { w.close() }
+    }
+    public func hidePaletteForAuthorizedInsertion() {
+        showPalette = false
+        PalettePanelController.shared?.hide()
+        for w in NSApplication.shared.windows where w.title == "Quick Fill" { w.close() }
+    }
+
+    public func invalidateInsertionTransaction() {
+        activeOperationID = nil
     }
 
     public func moveSelection(_ delta: Int) {
@@ -129,8 +139,7 @@ public final class AppState: ObservableObject {
             }
 
             let value = field.insertionText
-            showPalette = false
-            dismissPalette()
+            hidePaletteForAuthorizedInsertion()
 
             try? await Task.sleep(nanoseconds: 50_000_000)
 
@@ -140,15 +149,15 @@ public final class AppState: ObservableObject {
                 return
             }
 
-            let r = insertion.insert(
+            let r = await insertion.insert(
                 value: value,
                 into: target,
                 originalBundleID: originalBundleID,
                 originalPID: originalPID,
                 transactionID: operationID,
                 sessionGeneration: startingGeneration,
-                currentSessionGeneration: { [weak self] in self?.session.sessionGeneration ?? startingGeneration },
-                isTransactionActive: { [weak self] in self?.activeOperationID == operationID }
+                currentSessionGeneration: { self.session.sessionGeneration },
+                isTransactionActive: { self.activeOperationID == operationID }
             )
             if activeOperationID == operationID {
                 switch r.outcome {

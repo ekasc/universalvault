@@ -16,6 +16,10 @@ Branch: `repair/security-reliability`
 - Menu bar no longer opens a redundant native palette window.
 - Storage startup failure shows an actionable alert and exits instead of crashing.
 - Vault creation cannot overwrite an existing vault or key; creation rejects existing vault/key and reports distinguishable states.
+- Vault creation and unlock now reject an authentication result of `false`, even when no error is thrown.
+- Paladin transaction dismissal now invalidates in-flight insertion transactions while authorized insertion hides the palette without canceling them.
+- Keyboard insertion dispatch is asynchronous and no longer blocks the main thread for each chunk.
+- `SettingsView` clears retained imported backup state when the vault locks.
 - Random-number generation failure fails closed.
 - Tampered ciphertext and unsupported metadata versions fail decryption.
 - Backup versioned envelope preserves metadata integrity and supports legacy import.
