@@ -23,6 +23,7 @@ public final class AppState: ObservableObject {
     private var originalBundleID: String?
     private var originalPID: pid_t = 0
     private var activeOperationID: UUID?
+    private var palettePanel: PalettePanelController?
 
     public init(session: VaultSession) {
         self.session = session
@@ -31,7 +32,8 @@ public final class AppState: ObservableObject {
             Task { @MainActor in self?.invokePalette() }
         }
         _ = self.hotKey.register()
-        _ = PalettePanelController(appState: self)
+        let panel = PalettePanelController(appState: self)
+        self.palettePanel = panel
         session.onLock = { [weak self] in self?.clearSensitiveState() }
     }
 
@@ -145,7 +147,8 @@ public final class AppState: ObservableObject {
                 originalPID: originalPID,
                 transactionID: operationID,
                 sessionGeneration: startingGeneration,
-                currentSessionGeneration: { [weak self] in self?.session.sessionGeneration ?? startingGeneration }
+                currentSessionGeneration: { [weak self] in self?.session.sessionGeneration ?? startingGeneration },
+                isTransactionActive: { [weak self] in self?.activeOperationID == operationID }
             )
             if activeOperationID == operationID {
                 switch r.outcome {

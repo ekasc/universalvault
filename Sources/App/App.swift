@@ -17,7 +17,12 @@ struct UniversalVaultApp: App {
             let session = VaultSession(storage: storage, keyStore: KeychainVaultKeyStore(), auth: LocalAuthenticationService())
             return AppState(session: session)
         } catch {
-            fatalError("UniversalVault initialization failed: \(error.localizedDescription)")
+            let alert = NSAlert()
+            alert.messageText = "UniversalVault could not initialize secure storage."
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .critical
+            alert.runModal()
+            exit(EXIT_FAILURE)
         }
     }
 

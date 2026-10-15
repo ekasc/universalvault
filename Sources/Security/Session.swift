@@ -40,16 +40,18 @@ public final class VaultSession: ObservableObject {
 
     public func existsVault() -> Bool { storage.exists() }
 
-    public enum CreationStateError: Error, LocalizedError {
+    public enum CreationStateError: Error, LocalizedError, Equatable {
         case existingVault
         case missingKeyForExistingVault
         case vaultExistsAndKeyExists
+        case keyExistsWithoutVault
         case unavailable
         public var errorDescription: String? {
             switch self {
             case .existingVault: return "A vault already exists."
             case .missingKeyForExistingVault: return "Vault exists but its key is missing; recovery required."
             case .vaultExistsAndKeyExists: return "Vault already exists."
+            case .keyExistsWithoutVault: return "A Keychain key exists without a corresponding vault; recovery is required."
             case .unavailable: return "Vault state cannot be determined."
             }
         }
@@ -58,38 +60,42 @@ public final class VaultSession: ObservableObject {
     public func createNewVault() async throws {
         _ = try await auth.authenticate(reason: "Create a new Universal Vault")
 
-        let vaultExists = storage.exists()
+        let vaultExisted = storage.exists()
         let keyExists: Bool
         do { keyExists = try keyStore.keyExists() } catch { throw CreationStateError.unavailable }
 
-        if vaultExists && !keyExists {
+        if vaultExisted && !keyExists {
             throw CreationStateError.missingKeyForExistingVault
         }
-        if vaultExists && keyExists {
+        if vaultExisted && keyExists {
             throw CreationStateError.vaultExistsAndKeyExists
         }
-        // Vault missing but abandoned key present: remove orphan key from interrupted init.
-        if !vaultExists && keyExists {
-            try keyStore.deleteKey()
+        if !vaultExisted && keyExists {
+            throw CreationStateError.keyExistsWithoutVault
         }
 
         let newKey = SymmetricKey(size: .bits256)
+        var keyStored = false
+        let p = VaultPayload()
         try keyStore.storeKey(newKey)
+        keyStored = true
         do {
-            let p = VaultPayload()
             let data = try VaultCrypto.encrypt(payload: p, key: newKey)
             try storage.write(data)
-            self.key = newKey
-            self.payload = p
-            self.isUnlocked = true
-            self.sessionGeneration = UUID()
-            self.touch()
-            self.startAutoLock()
         } catch {
-            // Never leave a newly created key without a committed vault.
-            try? keyStore.deleteKey()
+            // Do not delete the key if the attempted storage write may have committed.
+            if keyStored && !vaultExisted && !storage.exists() {
+                try? keyStore.deleteKey()
+            }
             throw error
         }
+
+        self.key = newKey
+        self.payload = p
+        self.isUnlocked = true
+        self.sessionGeneration = UUID()
+        self.touch()
+        self.startAutoLock()
     }
 
     public func unlock() async throws {
@@ -175,7 +181,8 @@ public final class VaultSession: ObservableObject {
     }
 
     public func requirePresence(reason: String) async throws {
-        _ = try await auth.authenticate(reason: reason)
+        let ok = try await auth.authenticate(reason: reason)
+        guard ok else { throw AuthError.canceled }
     }
 
     public struct VaultBackupEnvelope: Codable {
@@ -221,6 +228,9 @@ public final class VaultSession: ObservableObject {
             let decoder = JSONDecoder()
             if let env = try? decoder.decode(VaultBackupEnvelope.self, from: data),
                env.format == "universal-vault-backup", env.version == 1,
+               (100_000...1_000_000).contains(env.iterations),
+               env.salt.count >= 22, // enough base64 for 16-byte salt
+               Data(base64Encoded: env.salt)?.count == 16,
                let salt = Data(base64Encoded: env.salt),
                let boxData = Data(base64Encoded: env.sealedBox) {
                 let keyData = try deriveKey(passphrase: passphrase, salt: salt, iterations: UInt32(env.iterations))

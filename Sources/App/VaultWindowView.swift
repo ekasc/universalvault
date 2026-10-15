@@ -108,7 +108,7 @@ struct ItemEditorView: View {
     @EnvironmentObject var appState: AppState
     let itemID: UUID
     @State private var item: VaultItem = VaultItem(title: "")
-    @State private var saveTask: Task<Void, Never>?
+    @State private var saveChain: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -137,8 +137,10 @@ struct ItemEditorView: View {
     }
 
     private func save(_ v: VaultItem) {
-        saveTask?.cancel()
-        saveTask = Task {
+        let previous = saveChain
+        saveChain = Task {
+            await previous?.value
+            if Task.isCancelled { return }
             do {
                 try await appState.session.mutate { p in
                     if let i = p.items.firstIndex(where: { $0.id == itemID }) { p.items[i] = v }

@@ -15,6 +15,8 @@ struct SettingsView: View {
     @State private var pendingImportURL: URL?
     @State private var pendingExportURL: URL?
     @State private var pendingExport = false
+    @State private var pendingImported: VaultPayload?
+    @State private var showReplaceConfirmation = false
 
     private var payload: VaultPayload? { appState.session.currentPayload }
 
@@ -51,6 +53,27 @@ struct SettingsView: View {
             Button("OK") { performPassphrase() }
         } message: {
             Text("Enter backup passphrase.")
+        }
+        .confirmationDialog("Replace vault contents with imported backup?", isPresented: $showReplaceConfirmation) {
+            Button("Replace", role: .destructive) {
+                if let imported = pendingImported {
+                    Task {
+                        do {
+                            try await appState.session.mutate { p in
+                                p.items = imported.items
+                                p.categories = imported.categories
+                                p.profiles = imported.profiles
+                                p.settings = imported.settings
+                            }
+                            await MainActor.run { status = "Imported." }
+                        } catch {
+                            await MainActor.run { status = "Import failed: \\(error.localizedDescription)" }
+                        }
+                    }
+                }
+                pendingImported = nil
+            }
+            Button("Cancel", role: .cancel) { pendingImported = nil }
         }
     }
 
@@ -90,9 +113,10 @@ struct SettingsView: View {
     private func performPassphrase() {
         if pendingExport, let url = pendingExportURL {
             pendingExport = false
+            let p = passphrase
             Task {
                 do {
-                    let data = try appState.session.savePayloadToBackup(passphrase: passphrase)
+                    let data = try appState.session.savePayloadToBackup(passphrase: p)
                     try data.write(to: url)
                     await MainActor.run { status = "Exported." }
                 } catch {
@@ -100,8 +124,21 @@ struct SettingsView: View {
                 }
             }
             pendingExportURL = nil
-        } else {
-            performImport()
+        } else if let url = pendingImportURL {
+            let p = passphrase
+            Task {
+                do {
+                    let data = try Data(contentsOf: url)
+                    let imported = try VaultSession.importBackup(data, passphrase: p)
+                    await MainActor.run {
+                        pendingImported = imported
+                        showReplaceConfirmation = true
+                    }
+                } catch {
+                    await MainActor.run { status = "Import failed: \\(error.localizedDescription)" }
+                }
+            }
+            pendingImportURL = nil
         }
         passphrase = ""
     }
@@ -113,26 +150,6 @@ struct SettingsView: View {
         pendingImportURL = url
         passphrase = ""
         showPassphrasePrompt = true
-    }
-
-    private func performImport() {
-        guard let url = pendingImportURL else { return }
-        let data = (try? Data(contentsOf: url)) ?? Data()
-        Task {
-            do {
-                let imported = try VaultSession.importBackup(data, passphrase: passphrase)
-                try await appState.session.mutate { p in
-                    p.items = imported.items
-                    p.categories = imported.categories
-                    p.profiles = imported.profiles
-                    p.settings = imported.settings
-                }
-                await MainActor.run { status = "Imported." }
-            } catch {
-                await MainActor.run { status = "Import failed: \\(error.localizedDescription)" }
-            }
-        }
-        pendingImportURL = nil
     }
 
 }

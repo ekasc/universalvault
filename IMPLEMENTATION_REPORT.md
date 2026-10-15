@@ -4,6 +4,17 @@ Branch: `repair/security-reliability`
 
 ## Fixed and verified
 
+- Palette panel controller is retained by `AppState`, so native quick-fill presentation persists.
+- Vault creation no longer deletes existing/orphaned keys as cleanup; a Keychain key without a vault now requires recovery instead of deletion.
+- Failed vault writes do not delete the new key unless no vault exists.
+- `requirePresence()` propagates an authentication result of `false`.
+- Backup import no longer applies changes directly; it validates, stages, and requires explicit replacement.
+- Secure backup settings work captures passphrases locally before clearing UI state, avoiding empty-passphrase races.
+- Backup import validates PBKDF2 iteration bounds.
+- Keyboard insertion revalidates focus before every chunk and distinguishes partial delivery.
+- Editor saves are serialized to reduce stale/order races.
+- Menu bar no longer opens a redundant native palette window.
+- Storage startup failure shows an actionable alert and exits instead of crashing.
 - Vault creation cannot overwrite an existing vault or key; creation rejects existing vault/key and reports distinguishable states.
 - Random-number generation failure fails closed.
 - Tampered ciphertext and unsupported metadata versions fail decryption.
@@ -15,6 +26,7 @@ Branch: `repair/security-reliability`
 
 ## Fixed but not integration-tested
 
+- Global quick-fill keyboard focus still needs interactive verification.
 - System sleep, screen-lock, and termination locking on real macOS devices.
 - Insertion into external applications.
 - Real global shortcut behavior from arbitrary focused applications.

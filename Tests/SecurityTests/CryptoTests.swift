@@ -86,4 +86,35 @@ final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
         try await session.createNewVault()
         XCTAssertThrowsError(try session.savePayloadToBackup(passphrase: "short"))
     }
+
+    @MainActor func testExistingKeyWithoutVaultThrows() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let storage = try FileSystemVaultStorage(directory: url)
+        let keyStore = InMemoryKeyStore()
+        try keyStore.storeKey(SymmetricKey(size: .bits256))
+        let session = VaultSession(storage: storage, keyStore: keyStore, auth: TestAuth())
+        do {
+            try await session.createNewVault()
+            XCTFail("Creation with orphaned key should fail")
+        } catch let e as VaultSession.CreationStateError {
+            XCTAssertEqual(e, .keyExistsWithoutVault)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertTrue(try keyStore.keyExists())
+    }
+
+    func testBackupRejectsExtremeIterations() throws {
+        let dict: [String: Any] = [
+            "format": "universal-vault-backup",
+            "version": 1,
+            "kdf": "PBKDF2-HMAC-SHA256",
+            "iterations": 10_000_000,
+            "salt": Data(repeating: 0, count: 16).base64EncodedString(),
+            "sealedBox": Data(repeating: 0, count: 16).base64EncodedString()
+        ]
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        XCTAssertThrowsError(try VaultSession.importBackup(data, passphrase: "passphrase1234"))
+    }
+
 }

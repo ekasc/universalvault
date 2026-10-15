@@ -62,7 +62,8 @@ public final class InsertionEngine {
         originalPID: pid_t,
         transactionID: UUID,
         sessionGeneration: UUID,
-        currentSessionGeneration: () -> UUID
+        currentSessionGeneration: () -> UUID,
+        isTransactionActive: () -> Bool = { true }
     ) -> InsertionResult {
         guard !value.isEmpty else { return InsertionResult(outcome: .failed, method: "none", error: .valueEmpty) }
         if !AccessibilityPermission.isTrusted() { return InsertionResult(outcome: .rejected, method: "none", error: .permissionDenied) }
@@ -71,10 +72,13 @@ public final class InsertionEngine {
         if Date().timeIntervalSince(target.capturedAt) > 10 {
             return InsertionResult(outcome: .canceled, method: "none", error: .expired)
         }
+        if !isTransactionActive() {
+            return InsertionResult(outcome: .canceled, method: "none", error: .sessionChanged)
+        }
         _ = transactionID
 
         // Session must be unchanged
-        if currentSessionGeneration() != sessionGeneration {
+        if currentSessionGeneration() != sessionGeneration || !isTransactionActive() {
             return InsertionResult(outcome: .canceled, method: "none", error: .sessionChanged)
         }
 
@@ -121,8 +125,8 @@ public final class InsertionEngine {
             else if status == .noValue || status == .cannotComplete { return InsertionResult(outcome: .failed, method: "ax-selected-text", error: .axFailed) }
         }
 
-        // Revalidate session before keyboard fallback
-        if currentSessionGeneration() != sessionGeneration {
+        // Revalidate transaction and session before keyboard fallback
+        if currentSessionGeneration() != sessionGeneration || !isTransactionActive() {
             return InsertionResult(outcome: .canceled, method: "none", error: .sessionChanged)
         }
 
@@ -147,31 +151,60 @@ public final class InsertionEngine {
             if !CFEqual(target.element, f2) {
                 return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
             }
+        } else {
+            return InsertionResult(outcome: .canceled, method: "none", error: .targetInvalid)
         }
 
-        let ok = Self.postUnicode(value, to: pid)
-        if ok { return InsertionResult(outcome: .successUnverified, method: "cg-keyboard") }
-
-        return InsertionResult(outcome: .failed, method: "none", error: .keyboardFailed)
+        return Self.postUnicodeKeyboard(value, target: target.element, pid: pid, axApp: axApp)
     }
 
-    private static func postUnicode(_ text: String, to pid: pid_t) -> Bool {
+    private static func postUnicodeKeyboard(_ text: String, target: AXUIElement, pid: pid_t, axApp: AXUIElement) -> InsertionResult {
         let source = CGEventSource(stateID: .hidSystemState)
         let chunkSize = 20
         var index = text.startIndex
+        var insertedAny = false
+
+        func focusUnchanged() -> Bool {
+            guard FocusCapture.isProcessAlive(pid) else { return false }
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid { return false }
+            var focusedRef: CFTypeRef?
+            let status = AXUIElementCopyAttributeValue(axApp, kAXFocusedUIElementAttribute as CFString, &focusedRef)
+            guard status == .success, let focused = focusedRef else { return false }
+            return CFEqual((focused as! AXUIElement), target)
+        }
+
+        if !focusUnchanged() {
+            return InsertionResult(outcome: .canceled, method: "cg-keyboard", error: .focusChanged)
+        }
+
         while index < text.endIndex {
+            // Revalidate the transaction target before each event chunk.
+            if !focusUnchanged() {
+                return InsertionResult(
+                    outcome: insertedAny ? .partial : .canceled,
+                    method: "cg-keyboard",
+                    error: insertedAny ? .focusChanged : .focusChanged
+                )
+            }
             let end = text.index(index, offsetBy: chunkSize, limitedBy: text.endIndex) ?? text.endIndex
             let chunk = String(text[index..<end])
             index = end
             var chars = Array(chunk.utf16)
-            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) else { return false }
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) else {
+                return InsertionResult(outcome: insertedAny ? .partial : .failed, method: "cg-keyboard", error: .keyboardFailed)
+            }
             down.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
             down.postToPid(pid)
-            guard let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else { return false }
+            guard let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
+                return InsertionResult(outcome: insertedAny ? .partial : .failed, method: "cg-keyboard", error: .keyboardFailed)
+            }
             up.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
             up.postToPid(pid)
-            Thread.sleep(forTimeInterval: 0.01)
+            insertedAny = true
+            if index < text.endIndex {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
         }
-        return true
+        return InsertionResult(outcome: .successUnverified, method: "cg-keyboard")
     }
 }
