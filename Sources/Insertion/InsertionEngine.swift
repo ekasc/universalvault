@@ -110,9 +110,11 @@ public final class InsertionEngine {
         // because the palette was just closed, or the captured target may still
         // be active. A third application becoming active means the original
         // target no longer has the intended interaction context.
-        let currentFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        guard let currentFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier else {
+            return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
+        }
         let vaultPID = ProcessInfo.processInfo.processIdentifier
-        if let cf = currentFrontmost, cf != pid && cf != vaultPID {
+        if currentFrontmost != pid && currentFrontmost != vaultPID {
             return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
         }
 
@@ -153,8 +155,10 @@ public final class InsertionEngine {
         }
 
         // Strategy B: synthetic keyboard (controlled fallback)
-        let keyboardFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        if let kf = keyboardFrontmost, kf != pid && kf != ProcessInfo.processInfo.processIdentifier {
+        guard let keyboardFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier else {
+            return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
+        }
+        if keyboardFrontmost != pid && keyboardFrontmost != ProcessInfo.processInfo.processIdentifier {
             return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
         }
         if let app = target.app {
