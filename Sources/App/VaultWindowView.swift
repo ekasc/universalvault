@@ -62,6 +62,20 @@ struct VaultWindowView: View {
                         selectedItemID = newItem.id
                     }
                 } label: { Image(systemName: "plus") }
+                Menu {
+                    ForEach(Templates.all(), id: \.0) { name, icon, build in
+                        Button {
+                            Task {
+                                var newItem = build()
+                                await (try? appState.session.mutate { p in
+                                    newItem.sortOrder = p.items.count
+                                    p.items.append(newItem)
+                                })
+                                selectedItemID = newItem.id
+                            }
+                        } label: { Label(name, systemImage: icon) }
+                    }
+                } label: { Image(systemName: "doc.badge.plus") }
                 Button {
                     pendingDeleteID = selectedItemID
                 } label: { Image(systemName: "trash") }.disabled(selectedItemID == nil)

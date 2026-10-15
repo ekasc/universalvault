@@ -34,6 +34,10 @@ struct UniversalVaultApp: App {
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 520, height: 420)
+                Window("Settings", id: "settings") {
+            SettingsView().environmentObject(appState)
+        }
+        .defaultSize(width: 440, height: 520)
         Window("Onboarding", id: "onboarding") {
             OnboardingView().environmentObject(appState)
         }

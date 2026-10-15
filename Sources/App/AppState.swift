@@ -31,6 +31,7 @@ public final class AppState: ObservableObject {
             Task { @MainActor in self?.invokePalette() }
         }
         _ = self.hotKey.register()
+        _ = PalettePanelController(appState: self)
         session.onLock = { [weak self] in self?.clearSensitiveState() }
     }
 
@@ -43,6 +44,7 @@ public final class AppState: ObservableObject {
         originalBundleID = nil
         originalPID = 0
         showPalette = false
+        PalettePanelController.shared?.hide()
         for w in NSApplication.shared.windows where w.title == "Quick Fill" { w.close() }
     }
 
@@ -64,6 +66,7 @@ public final class AppState: ObservableObject {
         paletteQuery = ""
         refreshResults()
         showPalette = true
+        PalettePanelController.shared?.show()
     }
 
     public func refreshResults() {
@@ -76,6 +79,7 @@ public final class AppState: ObservableObject {
     public func dismissPalette() {
         showPalette = false
         paletteTarget = nil
+        PalettePanelController.shared?.hide()
         for w in NSApplication.shared.windows where w.title == "Quick Fill" { w.close() }
     }
 

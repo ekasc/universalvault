@@ -15,7 +15,7 @@ struct MenuBarView: View {
                     Task { try? await appState.session.unlock() }
                 }
             }
-            Button("Settings…") { openWindow(id: "vault") }
+            Button("Settings…") { openWindow(id: "settings") }
             Divider()
             Text(appState.errorMessage ?? "").font(.caption).foregroundStyle(.red).lineLimit(2)
             Divider()
