@@ -11,12 +11,14 @@ public final class PalettePanelController {
     public init(appState: AppState) {
         self.appState = appState
         let content = PaletteView().environmentObject(appState)
-        let hosting = NSHostingController(rootView: content)
+        let hosting = NSHostingView(rootView: content)
+        hosting.autoresizingMask = [.width, .height]
+
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
                             styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
                             backing: .buffered, defer: false)
         panel.title = "Quick Fill"
-        panel.contentViewController = hosting
+        panel.contentView = hosting
         panel.level = .floating
         panel.collectionBehavior = [.transient, .moveToActiveSpace, .fullScreenAuxiliary]
         panel.isFloatingPanel = true
@@ -28,12 +30,11 @@ public final class PalettePanelController {
     }
 
     public func show() {
+        FileHandle.standardError.write(Data("SHOW\n".utf8))
         positionNearMouse()
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        if let hosting = panel.contentViewController as? NSHostingController<PaletteView> {
-            panel.makeFirstResponder(hosting.view)
-        }
+        panel.makeFirstResponder(panel.contentView)
     }
 
     public func hide() {
