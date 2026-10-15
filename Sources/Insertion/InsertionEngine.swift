@@ -68,7 +68,8 @@ public final class InsertionEngine {
         if !AccessibilityPermission.isTrusted() { return InsertionResult(outcome: .rejected, method: "none", error: .permissionDenied) }
 
         // Transaction expiry (short-lived)
-        if Date().timeIntervalSince(target.capturedAt) > 10 { // fallback if capturedAt exists; handle below
+        if Date().timeIntervalSince(target.capturedAt) > 10 {
+            return InsertionResult(outcome: .canceled, method: "none", error: .expired)
         }
         _ = transactionID
 
