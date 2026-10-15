@@ -106,6 +106,16 @@ public final class InsertionEngine {
             return InsertionResult(outcome: .rejected, method: "none", error: .focusChanged)
         }
 
+        // Permit only the expected focus transition. UniversalVault may be active
+        // because the palette was just closed, or the captured target may still
+        // be active. A third application becoming active means the original
+        // target no longer has the intended interaction context.
+        let currentFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let vaultPID = ProcessInfo.processInfo.processIdentifier
+        if let cf = currentFrontmost, cf != pid && cf != vaultPID {
+            return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
+        }
+
         // Validate focus and role before insertion
         var focusedRef: CFTypeRef?
         let axApp = AXUIElementCreateApplication(pid)
@@ -143,6 +153,10 @@ public final class InsertionEngine {
         }
 
         // Strategy B: synthetic keyboard (controlled fallback)
+        let keyboardFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        if let kf = keyboardFrontmost, kf != pid && kf != ProcessInfo.processInfo.processIdentifier {
+            return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
+        }
         if let app = target.app {
             app.activate()
         }
