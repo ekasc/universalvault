@@ -55,10 +55,14 @@ public struct InsertionResult {
 public final class InsertionEngine {
     public init() {}
 
-    @MainActor private static func waitForActivation(pid: pid_t, deadline: Date) -> Bool {
+    @MainActor private static func waitForActivation(pid: pid_t, deadline: Date) async -> Bool {
         while Date() < deadline {
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { return true }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.016))
+            do {
+                try await Task.sleep(nanoseconds: 16_000_000)
+            } catch {
+                return false
+            }
         }
         return NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
     }
@@ -143,7 +147,7 @@ public final class InsertionEngine {
             app.activate()
         }
         // Bounded, event-driven activation verification instead of arbitrary sleep.
-        if !Self.waitForActivation(pid: pid, deadline: Date().addingTimeInterval(0.5)) {
+        if !(await Self.waitForActivation(pid: pid, deadline: Date().addingTimeInterval(0.5))) {
             return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
         }
 

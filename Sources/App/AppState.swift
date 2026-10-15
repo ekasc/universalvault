@@ -107,72 +107,92 @@ public final class AppState: ObservableObject {
         let operationID = UUID()
         activeOperationID = operationID
         let startingGeneration = session.sessionGeneration
+        // Capture the transaction's context before any await can let a newer
+        // operation replace shared selection state. Only this operation may
+        // mutate the state it still owns.
+        let capturedTarget = paletteTarget
+        let capturedBundleID = originalBundleID
+        let capturedPID = originalPID
 
         Task { @MainActor in
             if field.sensitivity == .critical {
                 do { try await session.requirePresence(reason: "Insert critical field \(field.label)") }
                 catch {
-                    if activeOperationID == operationID { errorMessage = error.localizedDescription }
-                    activeOperationID = nil
+                    if self.activeOperationID == operationID {
+                        self.errorMessage = error.localizedDescription
+                        self.activeOperationID = nil
+                    }
                     return
                 }
             } else if field.sensitivity == .sensitive && (session.currentPayload?.settings.requireAuthForSensitiveInsert ?? true) {
                 do { try await session.requirePresence(reason: "Insert sensitive field \(field.label)") }
                 catch {
-                    if activeOperationID == operationID { errorMessage = error.localizedDescription }
-                    activeOperationID = nil
+                    if self.activeOperationID == operationID {
+                        self.errorMessage = error.localizedDescription
+                        self.activeOperationID = nil
+                    }
                     return
                 }
             }
 
-            if activeOperationID != operationID || !session.isUnlocked || session.sessionGeneration != startingGeneration {
-                activeOperationID = nil
-                errorMessage = "Insertion canceled."
+            if self.activeOperationID != operationID || !session.isUnlocked || session.sessionGeneration != startingGeneration {
+                if self.activeOperationID == operationID {
+                    self.errorMessage = "Insertion canceled."
+                    self.activeOperationID = nil
+                }
                 return
             }
 
-            guard let target = paletteTarget else {
-                if activeOperationID == operationID { errorMessage = "No insertion target captured." }
-                dismissPalette()
-                activeOperationID = nil
+            guard let target = capturedTarget else {
+                if self.activeOperationID == operationID {
+                    self.errorMessage = "No insertion target captured."
+                    self.activeOperationID = nil
+                }
                 return
             }
 
             let value = field.insertionText
-            hidePaletteForAuthorizedInsertion()
+            if self.activeOperationID == operationID {
+                self.hidePaletteForAuthorizedInsertion()
+            }
 
             try? await Task.sleep(nanoseconds: 50_000_000)
 
-            if activeOperationID != operationID || !session.isUnlocked || session.sessionGeneration != startingGeneration {
-                errorMessage = "Insertion canceled."
-                activeOperationID = nil
+            if self.activeOperationID != operationID || !session.isUnlocked || session.sessionGeneration != startingGeneration {
+                if self.activeOperationID == operationID {
+                    self.errorMessage = "Insertion canceled."
+                    self.activeOperationID = nil
+                }
                 return
             }
 
             let r = await insertion.insert(
                 value: value,
                 into: target,
-                originalBundleID: originalBundleID,
-                originalPID: originalPID,
+                originalBundleID: capturedBundleID,
+                originalPID: capturedPID,
                 transactionID: operationID,
                 sessionGeneration: startingGeneration,
                 currentSessionGeneration: { self.session.sessionGeneration },
                 isTransactionActive: { self.activeOperationID == operationID }
             )
-            if activeOperationID == operationID {
+            let ownsTransaction = (self.activeOperationID == operationID)
+            if ownsTransaction {
                 switch r.outcome {
                 case .successVerified, .successUnverified:
-                    errorMessage = nil
+                    self.errorMessage = nil
                 case .canceled, .rejected:
-                    errorMessage = r.error?.errorDescription ?? "Insertion canceled."
+                    self.errorMessage = r.error?.errorDescription ?? "Insertion canceled."
                 default:
-                    errorMessage = r.error?.errorDescription ?? "Insertion failed."
+                    self.errorMessage = r.error?.errorDescription ?? "Insertion failed."
                 }
-                activeOperationID = nil
+                self.activeOperationID = nil
             }
-            paletteTarget = nil
-            originalBundleID = nil
-            originalPID = 0
+            if ownsTransaction {
+                self.paletteTarget = nil
+                self.originalBundleID = nil
+                self.originalPID = 0
+            }
         }
     }
 }
