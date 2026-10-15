@@ -108,6 +108,7 @@ struct ItemEditorView: View {
     @EnvironmentObject var appState: AppState
     let itemID: UUID
     @State private var item: VaultItem = VaultItem(title: "")
+    @State private var saveTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -136,13 +137,16 @@ struct ItemEditorView: View {
     }
 
     private func save(_ v: VaultItem) {
-        Task {
+        saveTask?.cancel()
+        saveTask = Task {
             do {
                 try await appState.session.mutate { p in
                     if let i = p.items.firstIndex(where: { $0.id == itemID }) { p.items[i] = v }
                 }
             } catch {
-                await MainActor.run { appState.errorMessage = "Save failed: \\(error.localizedDescription)" }
+                if !Task.isCancelled {
+                    await MainActor.run { appState.errorMessage = "Save failed: \\(error.localizedDescription)" }
+                }
             }
         }
     }

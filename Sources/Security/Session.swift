@@ -19,6 +19,7 @@ public final class VaultSession: ObservableObject {
     private var lastActivity: Date = Date()
     private var lockTimer: Timer?
     private var sleepObserver: (any NSObjectProtocol)?
+    private var screenLockObserver: (any NSObjectProtocol)?
     private var terminateObserver: (any NSObjectProtocol)?
 
     public var onLock: (() -> Void)?
@@ -145,12 +146,13 @@ public final class VaultSession: ObservableObject {
             Task { @MainActor in self?.lock() }
         }
         // Screen lock is delivered via distributed notifications (not guaranteed across OS versions).
-        _ = DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+        screenLockObserver = DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.lock() }
         }
     }
     private func stopSystemObservers() {
         if let t = sleepObserver { NSWorkspace.shared.notificationCenter.removeObserver(t); sleepObserver = nil }
+        if let t = screenLockObserver { DistributedNotificationCenter.default().removeObserver(t); screenLockObserver = nil }
     }
 
     // Data operations
