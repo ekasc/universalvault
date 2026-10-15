@@ -2,19 +2,35 @@
 
 ## Modules
 
-- Core: domain models (`VaultItem`, `VaultField`, `VaultPayload`, search, templates, validation). No Apple security deps.
-- VaultSecurity: storage, keychain, authentication, encryption, session management.
-- Insertion: accessibility permission, focus capture, insertion engine (AX + keyboard fallback).
-- App: SwiftUI menu bar app, vault window, quick-fill palette, shortcut registration.
+- Core: domain models, search, templates, validation. No Apple security dependencies.
+- VaultSecurity: storage, Keychain access, user-presence authentication, encryption, session management.
+- Insertion: Accessibility permission, focus capture, insertion engine using AX and controlled keyboard fallback.
+- App: SwiftUI menu-bar app, vault window, quick-fill palette, global shortcut, settings, packaging inputs.
 
 ## Data flow
 
-VaultPayload (Codable) -> JSON -> AES-GCM (CryptoKit) -> file under Application Support/UniversalVault/vault.uv. Key (256-bit) stored in Keychain with user-presence access control. Decrypted payload held in `VaultSession` only while unlocked. Search index built in memory after unlock and discarded on lock.
+`VaultPayload` (Codable) -> JSON -> AES-GCM (CryptoKit) -> file under `Application Support/UniversalVault/vault.uv`. The 256-bit data-encryption key is stored in Keychain with user-presence access control. The decrypted payload is held by `VaultSession` only while unlocked. Secure memory cleanup is best-effort under Swift ARC.
 
-## Insertion strategies
+Search runs over the in-memory decrypted payload and is cleared by the lock path. Search results contain field references but value previews are masked for sensitive and critical fields in the palette UI.
 
-A. Accessibility: set `kAXSelectedTextAttribute` (inserts at caret / replaces selection). B. Synthetic keyboard events via CGEvent posted to target PID. C. Explicit failure (no clipboard fallback).
+## Insertion flow
 
-## Auto-lock
+1. Capture the focused Accessibility element and its application before showing the palette.
+2. Validate the same element, process, application identity, capabilities, and session before dispatch.
+3. Use Accessibility insertion for supported writable controls.
+4. Use controlled CGEvent fallback only after revalidation.
+5. Return structured outcomes: verified, unverified/dispatched, canceled, rejected, failed, or partial.
+6. Never use clipboard fallback or target another input.
 
-Inactivity timer checks every 30 seconds; locks after configured minutes (clamped 1–1440). `VaultSession` also locks on system sleep, screen-lock notification where available, and application termination. Each lock increments a session generation, invalidating stale insertion transactions and clearing sensitive UI state. Zeroization is best-effort under Swift ARC.
+## Locking
+
+`VaultSession` locks on explicit logout, inactivity, system sleep, screen-lock notification, and application termination. Any lock changes the session generation, invalidating asynchronous insertion work and clearing palette/search/editor state.
+
+## Packaging
+
+`scripts/build-app.sh` builds an executable with Swift Package Manager and assembles an accessory app bundle with a stable bundle identifier, Info.plist, and ad-hoc signature. It is not a production distribution pipeline.
+
+## Open limitations
+
+- Real insertion compatibility is listed in `COMPATIBILITY.md`.
+- Native window integration tests requiring Accessibility permission are not automated.

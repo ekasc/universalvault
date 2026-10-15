@@ -2,57 +2,50 @@
 
 Branch: `repair/security-reliability`
 
-## Completed in this repair pass
-
-- SPM project (Core, VaultSecurity, Insertion, App) builds cleanly (`swift build`).
-- Encrypted vault (AES-GCM), Keychain DEK with non-destructive key creation, user-presence auth, atomic storage.
-- Crash-safe vault creation: rejects existing vault/key, cleans orphaned abandoned key, rolls back a newly stored key on write failure.
-- Keychain status determination now distinguishes missing vs. undeterminable.
-- `SecRandomCopyBytes` failures now fail closed.
-- Vault directory permissions tightened to `0700`; vault file remains `0600`.
-- Ext (not replaced) `FieldValue` number conversion avoids Int overflow.
-- Date insertion defaults to `YYYY-MM-DD`; `VaultField.preferredInsertFormat` supported.
-- Session locking: inactivity clamping, system sleep and termination handling, session generation invalidation, sensitive UI clearing.
-- Global shortcut decision is no longer dependent only on SwiftUI window state; menu-bar coordinator remains (NSPanel evaluation pending).
-- Insertion transaction validation re-checks session, process liveness, application identity, focused element, and capability before dispatch.
-- Keyboard fallback activation is bounded (max 0.5s), not a fixed 100 ms assumption.
-- Field editor uses stable field IDs instead of array indices.
-- Deletion requires confirmation.
-- Save failures are surfaced, not discarded.
-- Secret field type raises sensitivity to at least `.sensitive`.
-- Sensitivity changes on insert: sensitive requires presence when configured; critical always requires fresh presence.
-- Versioned backup format with PBKDF2, AAD-bound metadata; legacy backup import retained.
-- Tests: 8/8 pass (3 Core + 5 Security).
-
 ## Fixed and verified
 
-- Vault creation cannot overwrite an existing vault/key.
-- Missing Keychain key is not silently replaced.
-- Random-number failure fails closed.
-- Tampered ciphertext/metadata still fails decryption.
-- Backup uses versioned metadata and legacy compatibility.
-- Insertion no longer trusts process ID alone.
-- Numeric overflow avoided.
-- Stale indexed field bindings removed.
-- Save errors are not swallowed.
+- Vault creation cannot overwrite an existing vault or key; creation rejects existing vault/key and reports distinguishable states.
+- Random-number generation failure fails closed.
+- Tampered ciphertext and unsupported metadata versions fail decryption.
+- Backup versioned envelope preserves metadata integrity and supports legacy import.
+- Large numeric values cannot trap during `insertionText`.
+- Field loading on macOS builds cleanly (Swift 6.2).
+- `.app` bundle package can be assembled and ad-hoc signed.
+- Models, validation, cryptography, backup, and vault lifecycle automated tests pass.
 
 ## Fixed but not integration-tested
 
-- System-sleep and screen-lock locking (platform-dependent).
-- Insertion into external macOS applications.
-- Real global shortcut activation from arbitrary frontmost apps.
-- Backup import into an existing vault workflow in the UI (backend method exists).
-- Nsuppression of stale UI after lock on real multi-window setups.
+- System sleep, screen-lock, and termination locking on real macOS devices.
+- Insertion into external applications.
+- Real global shortcut behavior from arbitrary focused applications.
+- Backup export/import workflow in the settings UI.
+- UI behavior after lock in multi-window configurations.
+- Settings-driven insensitive insertion and auto-lock behavior.
 
 ## Still blocked
 
-- Automated Accessibility-insertion tests require macOS `AXIsProcessTrusted` and interactive permission grants.
-- Real-browser insertion compatibility not executed.
+- Automated Accessibility insertion tests require `AXIsProcessTrusted`, interactive TCC permission, and a live foreground target.
+- Real browser insertion compatibility has not been executed.
+- Real user-presence authentication behavior in production paths requires manual testing on macOS.
 
 ## Explicitly deferred
 
-- Full NSPanel palette window controller.
-- Application bundle packaging beyond `.app` documentation.
-- Argon2id backup KDF (PBKDF2 retained with documented params).
+- Fully persistent shortcut customization beyond the default global registration.
+- Argon2id or another memory-hard backup KDF; retained PBKDF2 (200,000 iterations) with documented parameters.
 - Undo for item deletion.
-- Settings UI (shortcut persistence, backup/export/import UI) is partial.
+- Complete domain migration/recovery UI.
+- Production signing, notarization, and entitlement review.
+
+## Current verification
+
+- `swift build` passes.
+- `swift test` passes: 4 CoreTests and 7 SecurityTests.
+- `./scripts/build-app.sh debug` assembles and ad-hoc signs `.build/UniversalVault.app`.
+
+## Changed documentation
+
+- `README.md`
+- `ARCHITECTURE.md`
+- `SECURITY.md`
+- `COMPATIBILITY.md`
+- `SECURITY_REGRESSION_MATRIX.md`
