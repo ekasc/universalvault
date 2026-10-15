@@ -4,7 +4,7 @@ import Security
 import CryptoKit
 
 public protocol VaultKeyStore: Sendable {
-    func keyExists() -> Bool
+    func keyExists() throws -> Bool
     func loadKey(reason: String) throws -> SymmetricKey
     func storeKey(_ key: SymmetricKey) throws
     func deleteKey() throws
@@ -15,6 +15,8 @@ public enum KeyStoreError: Error, LocalizedError {
     case accessDenied
     case unexpected(OSStatus)
     case accessControlCreationFailed
+    case alreadyExists
+    case statusUnknown(OSStatus)
 
     public var errorDescription: String? {
         switch self {
@@ -22,6 +24,8 @@ public enum KeyStoreError: Error, LocalizedError {
         case .accessDenied: return "Access to vault key denied."
         case .unexpected(let s): return "Keychain error: \(s)"
         case .accessControlCreationFailed: return "Could not create key access control."
+        case .alreadyExists: return "A vault key already exists."
+        case .statusUnknown(let s): return "Keychain status could not be determined: \(s)"
         }
     }
 }
@@ -32,7 +36,7 @@ public final class KeychainVaultKeyStore: VaultKeyStore {
 
     public init() {}
 
-    public func keyExists() -> Bool {
+    public func keyExists() throws -> Bool {
         let q: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -40,7 +44,11 @@ public final class KeychainVaultKeyStore: VaultKeyStore {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         let status = SecItemCopyMatching(q as CFDictionary, nil)
-        return status == errSecSuccess
+        switch status {
+        case errSecSuccess: return true
+        case errSecItemNotFound: return false
+        default: throw KeyStoreError.statusUnknown(status)
+        }
     }
 
     private func accessControl() throws -> SecAccessControl {
@@ -54,8 +62,7 @@ public final class KeychainVaultKeyStore: VaultKeyStore {
     }
 
     public func storeKey(_ key: SymmetricKey) throws {
-        // Remove any existing
-        try? deleteKey()
+        if try keyExists() { throw KeyStoreError.alreadyExists }
         let ac = try accessControl()
         let data = key.withUnsafeBytes { Data($0) }
         let q: [String: Any] = [
@@ -66,6 +73,7 @@ public final class KeychainVaultKeyStore: VaultKeyStore {
             kSecAttrAccessControl as String: ac,
         ]
         let status = SecItemAdd(q as CFDictionary, nil)
+        if status == errSecDuplicateItem { throw KeyStoreError.alreadyExists }
         guard status == errSecSuccess else { throw KeyStoreError.unexpected(status) }
     }
 

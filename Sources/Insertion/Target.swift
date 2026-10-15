@@ -15,13 +15,15 @@ public final class TargetHandle {
     public let isSettableValue: Bool
     public let isSettableSelectedText: Bool
     public let app: NSRunningApplication?
+    public let capturedAt: Date
 
-    public init(element: AXUIElement, role: String?, isSettableValue: Bool, isSettableSelectedText: Bool, app: NSRunningApplication?) {
+    public init(element: AXUIElement, role: String?, isSettableValue: Bool, isSettableSelectedText: Bool, app: NSRunningApplication?, capturedAt: Date = Date()) {
         self.element = element
         self.role = role
         self.isSettableValue = isSettableValue
         self.isSettableSelectedText = isSettableSelectedText
         self.app = app
+        self.capturedAt = capturedAt
     }
 }
 import AppKit

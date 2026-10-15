@@ -7,6 +7,7 @@ struct VaultWindowView: View {
     @State private var selectedItemID: UUID?
     @State private var search: String = ""
     @State private var error: String?
+    @State private var pendingDeleteID: UUID?
 
     private var payload: VaultPayload? { appState.session.currentPayload }
 
@@ -62,15 +63,19 @@ struct VaultWindowView: View {
                     }
                 } label: { Image(systemName: "plus") }
                 Button {
-                    if let id = selectedItemID {
-                        Task {
-                            await (try? appState.session.mutate { p in
-                                p.items.removeAll { $0.id == id }
-                            })
-                            selectedItemID = nil
+                    pendingDeleteID = selectedItemID
+                } label: { Image(systemName: "trash") }.disabled(selectedItemID == nil)
+                .confirmationDialog("Delete item?", isPresented: Binding(get: { pendingDeleteID != nil }, set: { if !$0 { pendingDeleteID = nil } })) {
+                    Button("Delete", role: .destructive) {
+                        if let id = pendingDeleteID {
+                            Task {
+                                try? await appState.session.mutate { p in p.items.removeAll { $0.id == id } }
+                                selectedItemID = nil
+                                pendingDeleteID = nil
+                            }
                         }
                     }
-                } label: { Image(systemName: "trash") }.disabled(selectedItemID == nil)
+                }
             }.padding(8)
         }
     }
@@ -104,8 +109,8 @@ struct ItemEditorView: View {
                     }
                     Spacer()
                 }
-                ForEach(Array(item.fields.enumerated()), id: \.element.id) { idx, _ in
-                    FieldEditorRow(item: $item, fieldIndex: idx)
+                ForEach(item.fields) { field in
+                    FieldEditorRow(item: $item, fieldID: field.id)
                 }
             }
             .padding()
@@ -117,43 +122,60 @@ struct ItemEditorView: View {
     }
 
     private func save(_ v: VaultItem) {
-        Task { try? await appState.session.mutate { p in
-            if let i = p.items.firstIndex(where: { $0.id == itemID }) { p.items[i] = v }
-        } }
+        Task {
+            do {
+                try await appState.session.mutate { p in
+                    if let i = p.items.firstIndex(where: { $0.id == itemID }) { p.items[i] = v }
+                }
+            } catch {
+                await MainActor.run { appState.errorMessage = "Save failed: \\(error.localizedDescription)" }
+            }
+        }
     }
 }
 
 struct FieldEditorRow: View {
     @Binding var item: VaultItem
-    let fieldIndex: Int
+    let fieldID: UUID
     @State private var reveal: Bool = false
 
-    private var f: Binding<VaultField> {
-        Binding(get: { item.fields[fieldIndex] }, set: { item.fields[fieldIndex] = $0 })
+    private var fieldIndex: Int? { item.fields.firstIndex(where: { $0.id == fieldID }) }
+
+    private var field: Binding<VaultField>? {
+        guard let idx = fieldIndex else { return nil }
+        return Binding(get: { item.fields[idx] }, set: { item.fields[idx] = $0 })
     }
 
     var body: some View {
-        let field = f
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    TextField("Key", text: field.key).frame(width: 100)
-                    TextField("Label", text: field.label)
-                    Picker("Type", selection: field.type) {
-                        ForEach(FieldType.allCases, id: \.self) { t in Text(t.rawValue).tag(t) }
-                    }.frame(width: 110)
-                    Picker("Sensitivity", selection: field.sensitivity) {
-                        ForEach(SensitivityLevel.allCases, id: \.self) { s in Text(s.rawValue).tag(s) }
-                    }.frame(width: 100)
-                    Button(role: .destructive) {
-                        item.fields.remove(at: fieldIndex)
-                    } label: { Image(systemName: "trash") }
+        if let field {
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        TextField("Key", text: field.key).frame(width: 100)
+                        TextField("Label", text: field.label)
+                        Picker("Type", selection: field.type) {
+                            ForEach(FieldType.allCases, id: \.self) { t in Text(t.rawValue).tag(t) }
+                        }.frame(width: 110)
+                        Picker("Sensitivity", selection: field.sensitivity) {
+                            ForEach(SensitivityLevel.allCases, id: \.self) { s in Text(s.rawValue).tag(s) }
+                        }.frame(width: 100)
+                        Button(role: .destructive) {
+                            item.fields.removeAll { $0.id == fieldID }
+                        } label: { Image(systemName: "trash") }
+                    }
+                    .onChange(of: field.wrappedValue.type) { _, newType in
+                        if newType == .secret {
+                            if field.wrappedValue.sensitivity < .sensitive {
+                                field.wrappedValue.sensitivity = .sensitive
+                            }
+                        }
+                    }
+                    valueEditor(for: field.wrappedValue.type, field: field)
+                    TextField("Aliases (comma)", text: Binding(
+                        get: { field.wrappedValue.aliases.joined(separator: ", ") },
+                        set: { field.wrappedValue.aliases = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
+                    )).font(.caption)
                 }
-                valueEditor(for: field.wrappedValue.type, field: field)
-                TextField("Aliases (comma)", text: Binding(
-                    get: { field.wrappedValue.aliases.joined(separator: ", ") },
-                    set: { field.wrappedValue.aliases = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
-                )).font(.caption)
             }
         }
     }

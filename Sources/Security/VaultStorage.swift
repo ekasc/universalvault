@@ -15,6 +15,7 @@ public final class FileSystemVaultStorage: VaultStorage {
         let base = directory ?? (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("UniversalVault", isDirectory: true))
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: base.path)
         self.url = base.appendingPathComponent("vault.uv")
     }
 

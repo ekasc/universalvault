@@ -25,7 +25,7 @@ public final class FocusCapture {
         _ = AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &selSettable)
 
         return TargetHandle(element: element, role: role, isSettableValue: valueSettable.boolValue,
-                            isSettableSelectedText: selSettable.boolValue, app: app)
+                            isSettableSelectedText: selSettable.boolValue, app: app, capturedAt: Date())
     }
 
     public static func isProcessAlive(_ pid: pid_t) -> Bool {

@@ -10,7 +10,7 @@ final class TestAuth: UserPresenceAuthenticating, @unchecked Sendable {
 
 final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
     private var data: Data?
-    func keyExists() -> Bool { data != nil }
+    func keyExists() throws -> Bool { data != nil }
     func loadKey(reason: String) throws -> SymmetricKey {
         guard let d = data else { throw KeyStoreError.notFound }
         return SymmetricKey(data: d)
@@ -51,8 +51,8 @@ final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
         try await session.mutate { p in
             p.items.append(VaultItem(title: "B"))
         }
-        let backup = try session.savePayloadToBackup(passphrase: "pass123")
-        let imported = try VaultSession.importBackup(backup, passphrase: "pass123")
+        let backup = try session.savePayloadToBackup(passphrase: "passphrase1234")
+        let imported = try VaultSession.importBackup(backup, passphrase: "passphrase1234")
         XCTAssertEqual(imported.items.first?.title, "B")
         XCTAssertThrowsError(try VaultSession.importBackup(backup, passphrase: "wrong"))
     }
@@ -64,5 +64,26 @@ final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
         json["formatVersion"] = 999
         let bad = try JSONSerialization.data(withJSONObject: json)
         XCTAssertThrowsError(try VaultCrypto.decrypt(bad, key: key))
+    }
+
+    @MainActor func testCreateVaultTwiceThrows() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let storage = try FileSystemVaultStorage(directory: url)
+        let session = VaultSession(storage: storage, keyStore: InMemoryKeyStore(), auth: TestAuth())
+        try await session.createNewVault()
+        do {
+            try await session.createNewVault()
+            XCTFail("Second creation should fail")
+        } catch {
+            // expected
+        }
+    }
+
+    @MainActor func testShortBackupPassphraseThrows() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let storage = try FileSystemVaultStorage(directory: url)
+        let session = VaultSession(storage: storage, keyStore: InMemoryKeyStore(), auth: TestAuth())
+        try await session.createNewVault()
+        XCTAssertThrowsError(try session.savePayloadToBackup(passphrase: "short"))
     }
 }

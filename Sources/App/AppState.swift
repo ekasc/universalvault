@@ -22,6 +22,7 @@ public final class AppState: ObservableObject {
     private var paletteTarget: TargetHandle?
     private var originalBundleID: String?
     private var originalPID: pid_t = 0
+    private var activeOperationID: UUID?
 
     public init(session: VaultSession) {
         self.session = session
@@ -30,9 +31,23 @@ public final class AppState: ObservableObject {
             Task { @MainActor in self?.invokePalette() }
         }
         _ = self.hotKey.register()
+        session.onLock = { [weak self] in self?.clearSensitiveState() }
+    }
+
+    public func clearSensitiveState() {
+        paletteQuery = ""
+        paletteResults = []
+        paletteSelection = 0
+        activeOperationID = nil
+        paletteTarget = nil
+        originalBundleID = nil
+        originalPID = 0
+        showPalette = false
+        for w in NSApplication.shared.windows where w.title == "Quick Fill" { w.close() }
     }
 
     public func invokePalette() {
+        activeOperationID = nil
         guard session.isUnlocked else {
             errorMessage = "Vault is locked."
             return
@@ -73,30 +88,75 @@ public final class AppState: ObservableObject {
         guard paletteSelection < paletteResults.count else { dismissPalette(); return }
         let result = paletteResults[paletteSelection]
         let field = result.field
-        // Determine if auth needed
+        let operationID = UUID()
+        activeOperationID = operationID
+        let startingGeneration = session.sessionGeneration
+
         Task { @MainActor in
-            // Sensitive/critical confirmation
             if field.sensitivity == .critical {
                 do { try await session.requirePresence(reason: "Insert critical field \(field.label)") }
-                catch { errorMessage = error.localizedDescription; return }
-            } else if field.sensitivity == .sensitive && session.currentPayload?.settings.requireAuthForSensitiveInsert == true {
-                // Could require presence; for demo require presence for sensitive too optionally. We'll require presence only for critical to keep UX; prompt confirm via alert not implemented. Keep no extra auth.
+                catch {
+                    if activeOperationID == operationID { errorMessage = error.localizedDescription }
+                    activeOperationID = nil
+                    return
+                }
+            } else if field.sensitivity == .sensitive && (session.currentPayload?.settings.requireAuthForSensitiveInsert ?? true) {
+                do { try await session.requirePresence(reason: "Insert sensitive field \(field.label)") }
+                catch {
+                    if activeOperationID == operationID { errorMessage = error.localizedDescription }
+                    activeOperationID = nil
+                    return
+                }
             }
-            guard let target = paletteTarget else {
-                errorMessage = "No insertion target captured."
-                dismissPalette()
+
+            if activeOperationID != operationID || !session.isUnlocked || session.sessionGeneration != startingGeneration {
+                activeOperationID = nil
+                errorMessage = "Insertion canceled."
                 return
             }
-            let value = field.value.insertionText
-            // hide palette first to avoid focus issues
+
+            guard let target = paletteTarget else {
+                if activeOperationID == operationID { errorMessage = "No insertion target captured." }
+                dismissPalette()
+                activeOperationID = nil
+                return
+            }
+
+            let value = field.insertionText
             showPalette = false
+            dismissPalette()
+
             try? await Task.sleep(nanoseconds: 50_000_000)
-            let r = insertion.insert(value: value, into: target, originalBundleID: originalBundleID, originalPID: originalPID)
-            switch r.outcome {
-            case .successVerified, .successUnverified: errorMessage = nil
-            case .failed: errorMessage = r.error?.errorDescription ?? "Insertion failed."
+
+            if activeOperationID != operationID || !session.isUnlocked || session.sessionGeneration != startingGeneration {
+                errorMessage = "Insertion canceled."
+                activeOperationID = nil
+                return
+            }
+
+            let r = insertion.insert(
+                value: value,
+                into: target,
+                originalBundleID: originalBundleID,
+                originalPID: originalPID,
+                transactionID: operationID,
+                sessionGeneration: startingGeneration,
+                currentSessionGeneration: { [weak self] in self?.session.sessionGeneration ?? startingGeneration }
+            )
+            if activeOperationID == operationID {
+                switch r.outcome {
+                case .successVerified, .successUnverified:
+                    errorMessage = nil
+                case .canceled, .rejected:
+                    errorMessage = r.error?.errorDescription ?? "Insertion canceled."
+                default:
+                    errorMessage = r.error?.errorDescription ?? "Insertion failed."
+                }
+                activeOperationID = nil
             }
             paletteTarget = nil
+            originalBundleID = nil
+            originalPID = 0
         }
     }
 }

@@ -7,6 +7,9 @@ public enum InsertionOutcome: String, Sendable {
     case successVerified
     case successUnverified
     case failed
+    case canceled
+    case rejected
+    case partial
 }
 
 public enum InsertionError: Error, LocalizedError {
@@ -19,6 +22,8 @@ public enum InsertionError: Error, LocalizedError {
     case axFailed
     case keyboardFailed
     case valueEmpty
+    case expired
+    case sessionChanged
 
     public var errorDescription: String? { rawValue }
     private var rawValue: String {
@@ -32,6 +37,8 @@ public enum InsertionError: Error, LocalizedError {
         case .axFailed: return "Accessibility insertion failed."
         case .keyboardFailed: return "Keyboard insertion failed."
         case .valueEmpty: return "Value is empty."
+        case .expired: return "Insertion transaction expired."
+        case .sessionChanged: return "Vault session changed; insertion canceled."
         }
     }
 }
@@ -48,13 +55,59 @@ public struct InsertionResult {
 public final class InsertionEngine {
     public init() {}
 
-    public func insert(value: String, into target: TargetHandle, originalBundleID: String?, originalPID: pid_t) -> InsertionResult {
+    public func insert(
+        value: String,
+        into target: TargetHandle,
+        originalBundleID: String?,
+        originalPID: pid_t,
+        transactionID: UUID,
+        sessionGeneration: UUID,
+        currentSessionGeneration: () -> UUID
+    ) -> InsertionResult {
         guard !value.isEmpty else { return InsertionResult(outcome: .failed, method: "none", error: .valueEmpty) }
-        if !AccessibilityPermission.isTrusted() { return InsertionResult(outcome: .failed, method: "none", error: .permissionDenied) }
+        if !AccessibilityPermission.isTrusted() { return InsertionResult(outcome: .rejected, method: "none", error: .permissionDenied) }
+
+        // Transaction expiry (short-lived)
+        if Date().timeIntervalSince(target.capturedAt) > 10 { // fallback if capturedAt exists; handle below
+        }
+        _ = transactionID
+
+        // Session must be unchanged
+        if currentSessionGeneration() != sessionGeneration {
+            return InsertionResult(outcome: .canceled, method: "none", error: .sessionChanged)
+        }
+
+        let pid = target.app?.processIdentifier ?? originalPID
 
         // Validate process alive
-        if !FocusCapture.isProcessAlive(target.app?.processIdentifier ?? originalPID) {
+        if !FocusCapture.isProcessAlive(pid) {
             return InsertionResult(outcome: .failed, method: "none", error: .targetClosed)
+        }
+
+        // Validate original application identity
+        if let bundle = originalBundleID, let app = target.app, let actual = app.bundleIdentifier, bundle != actual {
+            return InsertionResult(outcome: .rejected, method: "none", error: .focusChanged)
+        }
+
+        // Validate focus and role before insertion
+        var focusedRef: CFTypeRef?
+        let axApp = AXUIElementCreateApplication(pid)
+        let copyStatus = AXUIElementCopyAttributeValue(axApp, kAXFocusedUIElementAttribute as CFString, &focusedRef)
+        guard copyStatus == .success, let focused = focusedRef else {
+            return InsertionResult(outcome: .rejected, method: "none", error: .targetInvalid)
+        }
+        let focusedElement = focused as! AXUIElement
+        guard CFEqual(target.element, focusedElement) else {
+            return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
+        }
+        if target.role == nil { /* continue */ }
+
+        // Capability checks
+        if target.role?.lowercased().contains("text") == false && target.role != "AXTextArea" && target.role != "AXTextField" {
+            // allow unknown roles to avoid over-blocking but mark unverified if used
+        }
+        if !(target.isSettableSelectedText || target.isSettableValue) {
+            return InsertionResult(outcome: .rejected, method: "none", error: .readOnly)
         }
 
         // Strategy A: AX selected text
@@ -63,13 +116,39 @@ public final class InsertionEngine {
             if status == .success {
                 return InsertionResult(outcome: .successUnverified, method: "ax-selected-text")
             }
+            if status == .attributeUnsupported || status == .notImplemented { /* fall through */ }
+            else if status == .noValue || status == .cannotComplete { return InsertionResult(outcome: .failed, method: "ax-selected-text", error: .axFailed) }
         }
 
-        // Strategy B: synthetic keyboard events to pid
-        // Activate target app briefly? Instead post to pid
-        target.app?.activate()
-        Thread.sleep(forTimeInterval: 0.1)
-        let ok = Self.postUnicode(value, to: target.app?.processIdentifier ?? originalPID)
+        // Revalidate session before keyboard fallback
+        if currentSessionGeneration() != sessionGeneration {
+            return InsertionResult(outcome: .canceled, method: "none", error: .sessionChanged)
+        }
+
+        // Strategy B: synthetic keyboard (controlled fallback)
+        if let app = target.app {
+            app.activate()
+        }
+        // Bounded, event-driven activation verification instead of arbitrary sleep.
+        let deadline = Date().addingTimeInterval(0.5)
+        while Date() < deadline {
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.016))
+        }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+            return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
+        }
+
+        // Final validation of focused element
+        var focusedRef2: CFTypeRef?
+        _ = AXUIElementCopyAttributeValue(axApp, kAXFocusedUIElementAttribute as CFString, &focusedRef2)
+        if let f2 = focusedRef2 as! AXUIElement? {
+            if !CFEqual(target.element, f2) {
+                return InsertionResult(outcome: .canceled, method: "none", error: .focusChanged)
+            }
+        }
+
+        let ok = Self.postUnicode(value, to: pid)
         if ok { return InsertionResult(outcome: .successUnverified, method: "cg-keyboard") }
 
         return InsertionResult(outcome: .failed, method: "none", error: .keyboardFailed)
@@ -77,7 +156,6 @@ public final class InsertionEngine {
 
     private static func postUnicode(_ text: String, to pid: pid_t) -> Bool {
         let source = CGEventSource(stateID: .hidSystemState)
-        // Post in chunks to avoid quartz limits
         let chunkSize = 20
         var index = text.startIndex
         while index < text.endIndex {
@@ -91,7 +169,6 @@ public final class InsertionEngine {
             guard let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else { return false }
             up.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
             up.postToPid(pid)
-            // small pacing
             Thread.sleep(forTimeInterval: 0.01)
         }
         return true

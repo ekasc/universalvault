@@ -40,14 +40,46 @@ public enum FieldValue: Codable, Equatable, Sendable {
         case .text(let v), .multiline(let v), .email(let v), .url(let v),
              .phone(let v), .secret(let v), .custom(let v): return v
         case .number(let v): return v.map { formatNumber($0) } ?? ""
-        case .date(let v): return ISO8601DateFormatter().string(from: v)
+        case .date(let v): return Self.isoDateFormatter.string(from: v)
         case .boolean(let v): return v ? "true" : "false"
         }
     }
 
+    private static let isoDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+
     private func formatNumber(_ d: Double) -> String {
-        if d == d.rounded() { return String(Int(d)) }
+        guard d.isFinite else { return "" }
+        if d == d.rounded() && d >= Double(Int.min) && d < Double(Int.max) {
+            return String(Int(d))
+        }
+        if d == d.rounded() {
+            return String(format: "%.0f", d)
+        }
         return String(d)
+    }
+}
+
+extension VaultField {
+    public var insertionText: String {
+        if case .date(let d) = value {
+            let format = preferredInsertFormat ?? "yyyy-MM-dd"
+            if format.lowercased() == "locale-short" {
+                let f = DateFormatter()
+                f.dateStyle = .short
+                f.timeStyle = .none
+                return f.string(from: d)
+            }
+            let f = DateFormatter()
+            f.dateFormat = format
+            return f.string(from: d)
+        }
+        return value.insertionText
     }
 }
 
