@@ -29,4 +29,17 @@ final class ModelsTests: XCTestCase {
         let errs = Validation.validateField(f)
         XCTAssertFalse(errs.isEmpty)
     }
+
+    func testLargeNumberInsertionText() {
+        let huge = VaultField(key: "n", label: "N", type: .number, value: .number(Double.greatestFiniteMagnitude))
+        XCTAssertFalse(huge.insertionText.contains("inf"))
+        let maxIntLike = Double(Int.max) + 999.0
+        let field = VaultField(key: "n2", label: "N2", type: .number, value: .number(maxIntLike))
+        XCTAssertEqual(field.insertionText, "9223372036854775808")
+        let integer = VaultField(key: "n3", label: "N3", type: .number, value: .number(42.0))
+        XCTAssertEqual(integer.insertionText, "42")
+        let dateField = VaultField(key: "d", label: "D", type: .date, value: .date(Date(timeIntervalSince1970: 0)), preferredInsertFormat: "yyyy-MM-dd")
+        XCTAssertFalse(dateField.insertionText.isEmpty)
+    }
+
 }
