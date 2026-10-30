@@ -7,18 +7,23 @@ Native macOS utility for storing arbitrary structured personal information and i
 Requirements: macOS 26+, Xcode 27 toolchain, Swift 6.2.
 
 ```sh
-cd UniversalVault
 swift build
 swift test
 ```
 
-Run the built application:
+Run a menu-bar build (builds, bundles, ad-hoc signs, launches):
+
+```sh
+./Scripts/run.sh
+```
+
+Or run the bare binary during development:
 
 ```sh
 .build/debug/UniversalVault
 ```
 
-The app runs as a menu-bar utility.
+The scripted bundle is preferable for real use: a stable bundle identifier keeps the Accessibility and Keychain identity consistent across rebuilds.
 
 ## Setup and permissions
 
@@ -32,9 +37,16 @@ Default shortcut: Control+Option+V. Change in a future build.
 
 ## Usage
 
-- Open vault window from menu bar.
-- Create items, add custom fields, set sensitivity.
-- Focus a text field in any app, press Control+Option+V, search, Enter to insert.
+The normal flow is one shortcut, one Touch ID prompt, one Enter:
+
+1. Click into any text field in any app.
+2. Press Control+Option+V.
+3. If the vault is locked, authenticate once. The Keychain item is the only gate; there is no second password prompt.
+4. The palette opens attached to the field you are in. Type to filter, then click a row (or use arrows and Return).
+
+The palette is a non-activating panel, so the app you are filling normally never loses focus. Press Control+Option+V again or Escape to dismiss it.
+
+The menu bar item offers the same Quick Fill action, plus Open Vault (create/edit items and fields) and Lock Vault.
 
 ## Distribution
 

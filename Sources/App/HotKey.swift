@@ -5,6 +5,7 @@ import AppKit
 @MainActor
 public final class HotKeyManager {
     public var onPress: (() -> Void)?
+    public private(set) var isRegistered = false
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
 
@@ -14,7 +15,10 @@ public final class HotKeyManager {
         unregister()
         let gMyHotKeyID = EventHotKeyID(signature: OSType(0x55564154), id: 1) // UVAT
         let status = RegisterEventHotKey(keyCode, modifiers, gMyHotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
-        guard status == noErr else { return false }
+        guard status == noErr else {
+            isRegistered = false
+            return false
+        }
 
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let handler: EventHandlerUPP = { (_, event, userData) -> OSStatus in
@@ -25,11 +29,13 @@ public final class HotKeyManager {
         }
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         let hStatus = InstallEventHandler(GetApplicationEventTarget(), handler, 1, &eventType, selfPtr, &eventHandler)
-        return hStatus == noErr
+        isRegistered = hStatus == noErr
+        return isRegistered
     }
 
     public func unregister() {
         if let ref = hotKeyRef { UnregisterEventHotKey(ref); hotKeyRef = nil }
         if let h = eventHandler { RemoveEventHandler(h); eventHandler = nil }
+        isRegistered = false
     }
 }

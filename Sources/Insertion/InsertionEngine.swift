@@ -9,7 +9,7 @@ public enum InsertionOutcome: String, Sendable {
     case failed
 }
 
-public enum InsertionError: Error, LocalizedError {
+public enum InsertionError: Error, LocalizedError, Equatable {
     case permissionDenied
     case targetInvalid
     case targetClosed
@@ -52,12 +52,12 @@ public final class InsertionEngine {
         guard !value.isEmpty else { return InsertionResult(outcome: .failed, method: "none", error: .valueEmpty) }
         if !AccessibilityPermission.isTrusted() { return InsertionResult(outcome: .failed, method: "none", error: .permissionDenied) }
 
-        // Validate process alive
-        if !FocusCapture.isProcessAlive(target.app?.processIdentifier ?? originalPID) {
+        let pid = target.app?.processIdentifier ?? originalPID
+        guard pid > 0, FocusCapture.isProcessAlive(pid) else {
             return InsertionResult(outcome: .failed, method: "none", error: .targetClosed)
         }
 
-        // Strategy A: AX selected text
+        // Strategy A: AX selected text. Works without focus changes in most apps.
         if target.isSettableSelectedText {
             let status = AXUIElementSetAttributeValue(target.element, kAXSelectedTextAttribute as CFString, value as CFTypeRef)
             if status == .success {
@@ -65,11 +65,12 @@ public final class InsertionEngine {
             }
         }
 
-        // Strategy B: synthetic keyboard events to pid
-        // Activate target app briefly? Instead post to pid
-        target.app?.activate()
-        Thread.sleep(forTimeInterval: 0.1)
-        let ok = Self.postUnicode(value, to: target.app?.processIdentifier ?? originalPID)
+        // Strategy B: synthetic keyboard events. Only now does the target need focus.
+        if let app = target.app, !app.isActive {
+            app.activate()
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+        let ok = Self.postUnicode(value, to: pid)
         if ok { return InsertionResult(outcome: .successUnverified, method: "cg-keyboard") }
 
         return InsertionResult(outcome: .failed, method: "none", error: .keyboardFailed)
@@ -78,7 +79,7 @@ public final class InsertionEngine {
     private static func postUnicode(_ text: String, to pid: pid_t) -> Bool {
         let source = CGEventSource(stateID: .hidSystemState)
         // Post in chunks to avoid quartz limits
-        let chunkSize = 20
+        let chunkSize = 64
         var index = text.startIndex
         while index < text.endIndex {
             let end = text.index(index, offsetBy: chunkSize, limitedBy: text.endIndex) ?? text.endIndex
@@ -92,7 +93,7 @@ public final class InsertionEngine {
             up.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
             up.postToPid(pid)
             // small pacing
-            Thread.sleep(forTimeInterval: 0.01)
+            Thread.sleep(forTimeInterval: 0.005)
         }
         return true
     }

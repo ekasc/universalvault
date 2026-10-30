@@ -39,23 +39,33 @@ public final class VaultSession: ObservableObject {
         self.key = newKey
         self.payload = p
         self.isUnlocked = true
+        self.lastError = nil
         self.touch()
         self.startAutoLock()
     }
 
+    /// The Keychain item itself is protected by `userPresence`, so reading the key
+    /// is the only authentication prompt. Do not add a second LAContext prompt here.
     public func unlock() async throws {
-        _ = try await auth.authenticate(reason: "Unlock Universal Vault")
-        let k = try keyStore.loadKey(reason: "Unlock vault")
-        guard let data = try storage.read() else {
-            throw CryptoEnvelopeError.invalidData
+        do {
+            let store = keyStore
+            let k: SymmetricKey = try await Task.detached(priority: .userInitiated) {
+                try store.loadKey(reason: "Unlock Universal Vault")
+            }.value
+            guard let data = try storage.read() else {
+                throw CryptoEnvelopeError.invalidData
+            }
+            let p = try VaultCrypto.decrypt(data, key: k)
+            self.key = k
+            self.payload = p
+            self.isUnlocked = true
+            self.lastError = nil
+            self.touch()
+            self.startAutoLock()
+        } catch {
+            self.lastError = error.localizedDescription
+            throw error
         }
-        let p = try VaultCrypto.decrypt(data, key: k)
-        self.key = k
-        self.payload = p
-        self.isUnlocked = true
-        self.lastError = nil
-        self.touch()
-        self.startAutoLock()
     }
 
     public func lock() {

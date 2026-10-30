@@ -24,12 +24,6 @@ struct UniversalVaultApp: App {
                 .environmentObject(appState)
         }
         .defaultSize(width: 900, height: 600)
-        Window("Quick Fill", id: "palette") {
-            PaletteView()
-                .environmentObject(appState)
-        }
-        .windowResizability(.contentSize)
-        .defaultSize(width: 520, height: 420)
         Window("Onboarding", id: "onboarding") {
             OnboardingView()
                 .environmentObject(appState)

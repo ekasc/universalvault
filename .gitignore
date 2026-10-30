@@ -7,6 +7,8 @@
 xcuserdata/
 DerivedData/
 *.xcodeproj/project.xcworkspace/xcuserdata/
+# Local app bundle from Scripts/run.sh
+build/
 # Editor
 *.swp
 *.swo

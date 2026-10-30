@@ -21,7 +21,13 @@ struct VaultWindowView: View {
             } else if !appState.session.isUnlocked {
                 VStack(spacing: 16) {
                     Text("Vault locked").font(.title2)
-                    Button("Unlock") { Task { try? await appState.session.unlock() } }
+                    Button("Unlock") {
+                        Task {
+                            do { try await appState.session.unlock() }
+                            catch { self.error = error.localizedDescription }
+                        }
+                    }
+                    if let e = error ?? appState.session.lastError { Text(e).foregroundStyle(.red).font(.caption) }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HSplitView {

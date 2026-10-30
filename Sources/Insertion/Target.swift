@@ -1,5 +1,7 @@
 import Foundation
 import ApplicationServices
+import CoreGraphics
+import AppKit
 
 public struct InsertionTarget: Sendable {
     public let bundleIdentifier: String?
@@ -15,13 +17,19 @@ public final class TargetHandle {
     public let isSettableValue: Bool
     public let isSettableSelectedText: Bool
     public let app: NSRunningApplication?
+    /// Screen rectangle of the focused control, in Cocoa screen coordinates (origin bottom-left).
+    public let frame: CGRect?
+    /// True for password-style fields, used to put secrets first in the palette.
+    public let isSecureField: Bool
 
-    public init(element: AXUIElement, role: String?, isSettableValue: Bool, isSettableSelectedText: Bool, app: NSRunningApplication?) {
+    public init(element: AXUIElement, role: String?, isSettableValue: Bool, isSettableSelectedText: Bool,
+                app: NSRunningApplication?, frame: CGRect? = nil, isSecureField: Bool = false) {
         self.element = element
         self.role = role
         self.isSettableValue = isSettableValue
         self.isSettableSelectedText = isSettableSelectedText
         self.app = app
+        self.frame = frame
+        self.isSecureField = isSecureField
     }
 }
-import AppKit
