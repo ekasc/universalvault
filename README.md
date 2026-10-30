@@ -11,7 +11,7 @@ swift build
 swift test
 ```
 
-Run a menu-bar build (builds, bundles, ad-hoc signs, launches):
+Run a menu-bar build (builds, bundles, ad-hoc signs, installs to `~/Applications`, launches):
 
 ```sh
 ./Scripts/run.sh

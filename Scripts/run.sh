@@ -10,7 +10,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${CONFIG:-debug}"
-APP="build/UniversalVault.app"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/Applications}"
+APP="$INSTALL_DIR/UniversalVault.app"
 BUNDLE_ID="com.universalvault.app"
 MIN_MACOS="26.0"
 
@@ -24,6 +25,7 @@ if [ ! -x "$BIN" ]; then
 fi
 
 echo "==> assembling $APP"
+mkdir -p "$INSTALL_DIR"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/UniversalVault"
@@ -54,13 +56,14 @@ codesign --force --sign - --identifier "$BUNDLE_ID" "$APP"
 codesign --verify --strict "$APP"
 
 # Relaunch cleanly: a running copy would otherwise stay on the old binary.
-if pgrep -f "$APP/Contents/MacOS/UniversalVault" >/dev/null 2>&1; then
+# Match any install location, including an older copy under a checkout.
+if pgrep -f "UniversalVault.app/Contents/MacOS/UniversalVault" >/dev/null 2>&1; then
 	echo "==> stopping the running instance"
-	pkill -f "$APP/Contents/MacOS/UniversalVault" || true
+	pkill -f "UniversalVault.app/Contents/MacOS/UniversalVault" || true
 	sleep 1
 fi
 
-echo "==> launching"
+echo "==> launching $APP"
 open "$APP"
 
 cat <<MSG
