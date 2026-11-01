@@ -59,17 +59,34 @@ public struct SearchEngine {
     }
 }
 
+/// A starting point in the item list's template menu.
+public struct Template: Identifiable, Sendable {
+    public let name: String
+    public let icon: String
+    private let buildItem: @Sendable () -> VaultItem
+
+    public var id: String { name }
+
+    public init(name: String, icon: String, build: @escaping @Sendable () -> VaultItem) {
+        self.name = name
+        self.icon = icon
+        self.buildItem = build
+    }
+
+    public func build() -> VaultItem { buildItem() }
+}
+
 public struct Templates {
-    public static func all() -> [(name: String, icon: String, build: () -> VaultItem)] {
-        return [
-            ("Identity", "person", identity),
-            ("Address", "mappin", address),
-            ("Payment Card", "creditcard", paymentCard),
-            ("Passport", "book", passport),
-            ("Driver's Licence", "car", driversLicence),
-            ("Education", "graduationcap", education),
-            ("Employment", "briefcase", employment),
-            ("Custom", "square.grid.2x2", custom),
+    public static func all() -> [Template] {
+        [
+            Template(name: "Identity", icon: "person", build: identity),
+            Template(name: "Address", icon: "mappin", build: address),
+            Template(name: "Payment Card", icon: "creditcard", build: paymentCard),
+            Template(name: "Passport", icon: "book", build: passport),
+            Template(name: "Driver's Licence", icon: "car", build: driversLicence),
+            Template(name: "Education", icon: "graduationcap", build: education),
+            Template(name: "Employment", icon: "briefcase", build: employment),
+            Template(name: "Custom", icon: "square.grid.2x2", build: custom),
         ]
     }
 

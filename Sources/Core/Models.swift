@@ -19,7 +19,7 @@ public enum FieldValue: Codable, Equatable, Sendable {
     case number(Double?)
     case email(String)
     case url(String)
-    case date(Date)
+    case date(Date?)
     case phone(String)
     case secret(String)
     case boolean(Bool)
@@ -30,7 +30,7 @@ public enum FieldValue: Codable, Equatable, Sendable {
         case .text(let v), .multiline(let v), .email(let v), .url(let v),
              .phone(let v), .secret(let v), .custom(let v): return v
         case .number(let v): return v.map { String($0) } ?? ""
-        case .date(let v): return String(v.timeIntervalSince1970)
+        case .date(let v): return v.map { String($0.timeIntervalSince1970) } ?? ""
         case .boolean(let v): return v ? "true" : "false"
         }
     }
@@ -40,14 +40,47 @@ public enum FieldValue: Codable, Equatable, Sendable {
         case .text(let v), .multiline(let v), .email(let v), .url(let v),
              .phone(let v), .secret(let v), .custom(let v): return v
         case .number(let v): return v.map { formatNumber($0) } ?? ""
-        case .date(let v): return ISO8601DateFormatter().string(from: v)
+        case .date(let v): return v.map { Self.isoDateFormatter.string(from: $0) } ?? ""
         case .boolean(let v): return v ? "true" : "false"
         }
     }
 
+    private static let isoDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f
+    }()
+
     private func formatNumber(_ d: Double) -> String {
-        if d == d.rounded() { return String(Int(d)) }
+        guard d.isFinite else { return "" }
+        if d == d.rounded() && d >= Double(Int.min) && d < Double(Int.max) {
+            return String(Int(d))
+        }
+        if d == d.rounded() {
+            return String(format: "%.0f", d)
+        }
         return String(d)
+    }
+}
+
+extension VaultField {
+    public var insertionText: String {
+        if case .date(let d) = value {
+            guard let d else { return "" }
+            let format = preferredInsertFormat ?? "yyyy-MM-dd"
+            if format.lowercased() == "locale-short" {
+                let f = DateFormatter()
+                f.dateStyle = .short
+                f.timeStyle = .none
+                return f.string(from: d)
+            }
+            let f = DateFormatter()
+            f.dateFormat = format
+            return f.string(from: d)
+        }
+        return value.insertionText
     }
 }
 
@@ -93,10 +126,26 @@ public struct VaultItem: Identifiable, Codable, Equatable, Sendable {
     public var createdAt: Date
     public var updatedAt: Date
     public var sortOrder: Int
+    /// Marked by the user. The item's fields are sealed with the sensitive key,
+    /// which the Keychain releases only after user-presence authentication, so a
+    /// locked item is unreadable rather than merely hidden.
+    public var isSensitive: Bool
+    /// AES-GCM sealed `[VaultField]` while the item is locked. `fields` is empty
+    /// in that state: a locked item cannot be searched, displayed, or inserted.
+    public var sealedFields: Data?
+    /// Opt-in inclusion in the read-only profile agents can query. Protected
+    /// items are never shared, whatever this flag says.
+    public var isShareableWithAgents: Bool
+
+    /// True when the item is protected and its contents are not currently in
+    /// memory.
+    public var isLocked: Bool { isSensitive && sealedFields != nil }
 
     public init(id: UUID = UUID(), title: String, categoryID: UUID? = nil, profileID: UUID? = nil,
                 icon: String? = nil, tags: [String] = [], fields: [VaultField] = [],
-                createdAt: Date = Date(), updatedAt: Date = Date(), sortOrder: Int = 0) {
+                createdAt: Date = Date(), updatedAt: Date = Date(), sortOrder: Int = 0,
+                isSensitive: Bool = false, sealedFields: Data? = nil,
+                isShareableWithAgents: Bool = false) {
         self.id = id
         self.title = title
         self.categoryID = categoryID
@@ -107,10 +156,38 @@ public struct VaultItem: Identifiable, Codable, Equatable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.sortOrder = sortOrder
+        self.isSensitive = isSensitive
+        self.sealedFields = sealedFields
+        self.isShareableWithAgents = isShareableWithAgents
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, categoryID, profileID, icon, tags, fields, createdAt, updatedAt,
+             sortOrder, isSensitive, sealedFields, isShareableWithAgents
+    }
+
+    /// Hand-written so a payload written before per-item protection still
+    /// decodes: those items have no `isSensitive` key.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        categoryID = try container.decodeIfPresent(UUID.self, forKey: .categoryID)
+        profileID = try container.decodeIfPresent(UUID.self, forKey: .profileID)
+        icon = try container.decodeIfPresent(String.self, forKey: .icon)
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        fields = try container.decodeIfPresent([VaultField].self, forKey: .fields) ?? []
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        sortOrder = try container.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
+        isSensitive = try container.decodeIfPresent(Bool.self, forKey: .isSensitive) ?? false
+        sealedFields = try container.decodeIfPresent(Data.self, forKey: .sealedFields)
+        isShareableWithAgents =
+            try container.decodeIfPresent(Bool.self, forKey: .isShareableWithAgents) ?? false
     }
 }
 
-public struct Category: Identifiable, Codable, Equatable, Sendable {
+public struct VaultCategory: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
     public var parentID: UUID?
@@ -150,12 +227,12 @@ public struct VaultPayload: Codable, Sendable {
     public var createdAt: Date
     public var updatedAt: Date
     public var profiles: [Profile]
-    public var categories: [Category]
+    public var categories: [VaultCategory]
     public var items: [VaultItem]
     public var settings: VaultSettings
 
     public init(schemaVersion: Int = 1, vaultID: UUID = UUID(), createdAt: Date = Date(),
-                updatedAt: Date = Date(), profiles: [Profile] = [], categories: [Category] = [],
+                updatedAt: Date = Date(), profiles: [Profile] = [], categories: [VaultCategory] = [],
                 items: [VaultItem] = [], settings: VaultSettings = VaultSettings()) {
         self.schemaVersion = schemaVersion
         self.vaultID = vaultID

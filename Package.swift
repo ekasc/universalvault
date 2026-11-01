@@ -15,7 +15,9 @@ let package = Package(
         .target(name: "VaultSecurity", dependencies: ["Core"], path: "Sources/Security"),
         .target(name: "Insertion", dependencies: ["Core"], path: "Sources/Insertion", linkerSettings: [.linkedFramework("Carbon"), .linkedFramework("ApplicationServices")]),
         .executableTarget(name: "App", dependencies: ["Core", "VaultSecurity", "Insertion"], path: "Sources/App"),
+        .executableTarget(name: "VaultBench", dependencies: ["Core", "VaultSecurity"], path: "Benchmarks/VaultBench"),
         .testTarget(name: "CoreTests", dependencies: ["Core"], path: "Tests/CoreTests"),
         .testTarget(name: "SecurityTests", dependencies: ["Core", "VaultSecurity"], path: "Tests/SecurityTests"),
+        .testTarget(name: "AppTests", dependencies: ["App", "Core", "VaultSecurity"], path: "Tests/AppTests"),
     ]
 )

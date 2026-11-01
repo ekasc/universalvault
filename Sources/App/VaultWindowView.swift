@@ -1,197 +1,216 @@
 import SwiftUI
 import Core
 import VaultSecurity
+import AppKit
 
+/// Shell for the vault window: it owns the create/locked states and hands the
+/// unlocked case to the browser.
 struct VaultWindowView: View {
     @EnvironmentObject var appState: AppState
-    @State private var selectedItemID: UUID?
-    @State private var search: String = ""
-    @State private var error: String?
+    @State private var authenticationTask: Task<Void, Never>?
+    @State private var authenticationID = UUID()
+    @State private var authenticating = false
+    @State private var showRecovery = false
+    @State private var status: String?
 
-    private var payload: VaultPayload? { appState.session.currentPayload }
+    private var session: VaultSession { appState.session }
 
     var body: some View {
         Group {
-            if !(appState.session.existsVault()) {
-                VStack(spacing: 16) {
-                    Text("No vault yet").font(.title2)
-                    Button("Create Vault") { Task { try? await appState.session.createNewVault() } }
-                    if let e = appState.session.lastError { Text(e).foregroundStyle(.red) }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if !appState.session.isUnlocked {
-                VStack(spacing: 16) {
-                    Text("Vault locked").font(.title2)
-                    Button("Unlock") { Task { try? await appState.session.unlock() } }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if !session.existsVault() {
+                lockedState(creating: true)
+            } else if !session.isUnlocked {
+                lockedState(creating: false)
             } else {
-                HSplitView {
-                    sidebar
-                        .frame(minWidth: 220, idealWidth: 260)
-                    detail
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                VaultBrowserView()
             }
         }
         .navigationTitle("Vault")
-    }
-
-    private var filteredItems: [VaultItem] {
-        guard let p = payload else { return [] }
-        let q = search.lowercased()
-        if q.isEmpty { return p.items.sorted { $0.sortOrder < $1.sortOrder } }
-        return p.items.filter { $0.title.lowercased().contains(q) || $0.fields.contains(where: { $0.label.lowercased().contains(q) }) }
-    }
-
-    private var sidebar: some View {
-        VStack {
-            TextField("Search", text: $search).textFieldStyle(.roundedBorder).padding(8)
-            List(selection: $selectedItemID) {
-                ForEach(filteredItems) { item in
-                    Label(item.title, systemImage: "doc.text").tag(item.id)
+        .safeAreaInset(edge: .bottom) {
+            if let error = appState.errorMessage {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Dismiss") { appState.errorMessage = nil }
                 }
+                .padding(12)
+                .background(.background)
+                .accessibilityElement(children: .contain)
             }
-            HStack {
-                Button {
-                    Task {
-                        var newItem = VaultItem(title: "New Item")
-                        await (try? appState.session.mutate { p in
-                            newItem.sortOrder = p.items.count
-                            p.items.append(newItem)
-                        })
-                        selectedItemID = newItem.id
-                    }
-                } label: { Image(systemName: "plus") }
-                Button {
-                    if let id = selectedItemID {
-                        Task {
-                            await (try? appState.session.mutate { p in
-                                p.items.removeAll { $0.id == id }
-                            })
-                            selectedItemID = nil
-                        }
-                    }
-                } label: { Image(systemName: "trash") }.disabled(selectedItemID == nil)
-            }.padding(8)
         }
+        .sheet(isPresented: $showRecovery) {
+            BackupTransferView(mode: .recover).environmentObject(appState)
+        }
+        .onDisappear { cancelAuthentication() }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            authenticationTask?.cancel()
+            authenticationID = UUID()
+            authenticating = false
+            status = nil
+        }
+    }
+
+    private func lockedState(creating: Bool) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: creating ? "lock.square.stack" : "lock.fill")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(Theme.tertiary)
+                .accessibilityHidden(true)
+            Text(creating ? "No vault yet" : "Vault locked")
+                .font(Typography.recordTitle)
+                .foregroundStyle(Theme.primary)
+            if creating {
+                Text("Everything stays on this Mac, encrypted with a key held in your Keychain.")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+            }
+            if let error = status ?? session.lastError {
+                Text(error)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.primary)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("vault.authenticationError")
+            }
+            if authenticating {
+                ProgressView(creating ? "Creating vault…" : "Unlocking vault…")
+                    .controlSize(.small)
+                    .accessibilityIdentifier("vault.authenticationProgress")
+                Button("Cancel") { cancelAuthentication(); status = "Authentication cancelled." }
+                    .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("vault.cancelAuthentication")
+            }
+            Button(creating ? "Create Vault" : "Unlock") { authenticate(creating: creating) }
+                .buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .disabled(authenticating)
+                .accessibilityIdentifier(creating ? "vault.create" : "vault.unlock")
+                .padding(.top, 4)
+            Button("Restore encrypted backup…") { showRecovery = true }
+                .disabled(authenticating)
+                .accessibilityIdentifier("vault.restore")
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 420)
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas)
+    }
+
+    private func authenticate(creating: Bool) {
+        guard !authenticating else { return }
+        let generation = session.sessionGeneration
+        let id = UUID()
+        authenticationID = id
+        authenticating = true
+        status = nil
+        authenticationTask = Task { @MainActor in
+            do {
+                guard generation == session.sessionGeneration, !Task.isCancelled else { return }
+                if creating { try await session.createNewVault() } else { try await session.unlock() }
+            } catch {
+                guard authenticationID == id, generation == session.sessionGeneration, !Task.isCancelled else { return }
+                status = error.localizedDescription
+            }
+            guard authenticationID == id else { return }
+            authenticating = false
+            authenticationTask = nil
+        }
+    }
+
+    private func cancelAuthentication() {
+        guard authenticating else { return }
+        authenticationTask?.cancel()
+        authenticationTask = nil
+        authenticationID = UUID()
+        authenticating = false
+    }
+}
+
+private struct VaultBrowserView: View {
+    @EnvironmentObject var appState: AppState
+
+    /// Optional because `List(selection:)` binds to an optional. Defaults to
+    /// All Items so the sidebar highlight matches what the list shows; `nil` is
+    /// read as All Items everywhere else.
+    @State private var selection: VaultSelection? = .allItems
+    @State private var selectedItemID: UUID?
+    @SceneStorage("vaultSidebarVisible") private var sidebarVisible = true
+
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { sidebarVisible ? .all : .detailOnly },
+            set: { sidebarVisible = $0 == .all || $0 == .automatic })
+    }
+
+    private var payload: VaultPayload? { appState.session.currentPayload }
+    private var activeSelection: VaultSelection { selection ?? .allItems }
+
+    var body: some View {
+        NavigationSplitView(columnVisibility: columnVisibility) {
+            ItemListView(selection: $selection, selectedItemID: $selectedItemID)
+                .navigationSplitViewColumnWidth(min: 240, ideal: 285, max: 380)
+        } detail: {
+            detail
+                .navigationSplitViewColumnWidth(min: 380, ideal: 640)
+        }
+        .onChange(of: selection) { _, newValue in
+            if !isValidScope(newValue) { selection = .allItems }
+            reconcileSelectedItem()
+        }
+        .onChange(of: payload?.updatedAt) { _, _ in
+            // A backup import can replace every category and profile; a scope
+            // pointing at one that no longer exists has to land somewhere the
+            // list can actually show.
+            if !isValidScope(selection) { selection = .allItems }
+            reconcileSelectedItem()
+        }
+        .onChange(of: appState.session.isUnlocked) { _, unlocked in
+            if !unlocked { selectedItemID = nil }
+        }
+    }
+
+    /// `nil` is what clicking empty sidebar space produces; treating it as
+    /// All Items keeps the highlight and the list contents agreeing.
+    private func isValidScope(_ candidate: VaultSelection?) -> Bool {
+        guard let candidate else { return false }
+        switch candidate {
+        case .allItems:
+            return true
+        case .category(let id):
+            return payload?.categories.contains { $0.id == id } ?? false
+        case .profile(let id):
+            return payload?.profiles.contains { $0.id == id } ?? false
+        }
+    }
+
+    /// The previously selected item may not be in the new scope; leaving it
+    /// selected would edit an item the list is no longer showing.
+    private func reconcileSelectedItem() {
+        guard let payload, let id = selectedItemID else { return }
+        if VaultBrowser.items(payload.items, selection: activeSelection).contains(where: { $0.id == id }) { return }
+        selectedItemID = nil
     }
 
     @ViewBuilder
     private var detail: some View {
-        if let id = selectedItemID, let _ = payload?.items.first(where: { $0.id == id }) {
-            ItemEditorView(itemID: id)
+        if payload?.items.isEmpty == true {
+            // The list already says there is nothing; a second empty state in
+            // the detail pane is noise.
+            Color.clear
+        } else if let id = selectedItemID, payload?.items.contains(where: { $0.id == id }) == true {
+            // `.id` forces a fresh editor per item. Without it SwiftUI reuses the
+            // view for a different item, `onAppear` does not fire again, and the
+            // editor keeps showing — and then saves — the previous item's values.
+            ItemEditorView(itemID: id).id("\(id)-\(appState.session.sessionGeneration)")
         } else {
-            Text("Select an item").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity)
-        }
-    }
-}
-
-struct ItemEditorView: View {
-    @EnvironmentObject var appState: AppState
-    let itemID: UUID
-    @State private var item: VaultItem = VaultItem(title: "")
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                TextField("Title", text: $item.title)
-                    .font(.title3.bold())
-                    .textFieldStyle(.roundedBorder)
-                HStack {
-                    Button("Add Field") {
-                        var f = VaultField(key: "field\(UUID().uuidString.prefix(4))", label: "New Field", type: .text)
-                        f.sortOrder = item.fields.count
-                        item.fields.append(f)
-                    }
-                    Spacer()
-                }
-                ForEach(Array(item.fields.enumerated()), id: \.element.id) { idx, _ in
-                    FieldEditorRow(item: $item, fieldIndex: idx)
-                }
-            }
-            .padding()
-        }
-        .onChange(of: item) { _, v in save(v) }
-        .onAppear {
-            if let fresh = appState.session.currentPayload?.items.first(where: { $0.id == itemID }) { item = fresh }
-        }
-    }
-
-    private func save(_ v: VaultItem) {
-        Task { try? await appState.session.mutate { p in
-            if let i = p.items.firstIndex(where: { $0.id == itemID }) { p.items[i] = v }
-        } }
-    }
-}
-
-struct FieldEditorRow: View {
-    @Binding var item: VaultItem
-    let fieldIndex: Int
-    @State private var reveal: Bool = false
-
-    private var f: Binding<VaultField> {
-        Binding(get: { item.fields[fieldIndex] }, set: { item.fields[fieldIndex] = $0 })
-    }
-
-    var body: some View {
-        let field = f
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    TextField("Key", text: field.key).frame(width: 100)
-                    TextField("Label", text: field.label)
-                    Picker("Type", selection: field.type) {
-                        ForEach(FieldType.allCases, id: \.self) { t in Text(t.rawValue).tag(t) }
-                    }.frame(width: 110)
-                    Picker("Sensitivity", selection: field.sensitivity) {
-                        ForEach(SensitivityLevel.allCases, id: \.self) { s in Text(s.rawValue).tag(s) }
-                    }.frame(width: 100)
-                    Button(role: .destructive) {
-                        item.fields.remove(at: fieldIndex)
-                    } label: { Image(systemName: "trash") }
-                }
-                valueEditor(for: field.wrappedValue.type, field: field)
-                TextField("Aliases (comma)", text: Binding(
-                    get: { field.wrappedValue.aliases.joined(separator: ", ") },
-                    set: { field.wrappedValue.aliases = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
-                )).font(.caption)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func valueEditor(for type: FieldType, field: Binding<VaultField>) -> some View {
-        switch type {
-        case .text, .email, .url, .phone, .custom:
-            TextField("Value", text: Binding(get: {
-                switch field.wrappedValue.value {
-                case .text(let v), .email(let v), .url(let v), .phone(let v), .custom(let v): return v
-                default: return field.wrappedValue.value.storageDescription
-                }
-            }, set: { val in
-                switch type {
-                case .email: field.wrappedValue.value = .email(val)
-                case .url: field.wrappedValue.value = .url(val)
-                case .phone: field.wrappedValue.value = .phone(val)
-                case .custom: field.wrappedValue.value = .custom(val)
-                default: field.wrappedValue.value = .text(val)
-                }
-            })).textFieldStyle(.roundedBorder)
-        case .multiline:
-            TextEditor(text: Binding(get: { if case .multiline(let v)=field.wrappedValue.value {return v}; return "" }, set: { field.wrappedValue.value = .multiline($0) }))
-                .frame(height: 60).overlay(RoundedRectangle(cornerRadius:4).stroke(.separator))
-        case .secret:
-            HStack {
-                if reveal { TextField("Value", text: Binding(get: { if case .secret(let v)=field.wrappedValue.value {return v}; return "" }, set: { field.wrappedValue.value = .secret($0) })).textFieldStyle(.roundedBorder) }
-                else { SecureField("Value", text: Binding(get: { if case .secret(let v)=field.wrappedValue.value {return v}; return "" }, set: { field.wrappedValue.value = .secret($0) })).textFieldStyle(.roundedBorder) }
-                Button(reveal ? "Hide" : "Show") { reveal.toggle() }
-            }
-        case .number:
-            TextField("Value", text: Binding(get: { if case .number(let v)=field.wrappedValue.value { return v.map{String($0)} ?? "" }; return "" }, set: { field.wrappedValue.value = .number(Double($0)) }))
-                .textFieldStyle(.roundedBorder)
-        case .boolean:
-            Toggle("Value", isOn: Binding(get: { if case .boolean(let v)=field.wrappedValue.value {return v}; return false }, set: { field.wrappedValue.value = .boolean($0) }))
-        case .date:
-            DatePicker("Value", selection: Binding(get: { if case .date(let v)=field.wrappedValue.value {return v}; return Date() }, set: { field.wrappedValue.value = .date($0) }), displayedComponents: .date)
+            VaultPlaceholder(
+                symbol: "sidebar.left",
+                title: "Nothing selected",
+                message: "Pick an item from the list, or choose File > New Item.")
         }
     }
 }

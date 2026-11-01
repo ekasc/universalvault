@@ -11,3 +11,6 @@ DerivedData/
 *.swp
 *.swo
 *~
+.mirofish/
+swarm/
+.audit/
