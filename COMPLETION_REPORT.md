@@ -1,6 +1,6 @@
 # UniversalVault completion status
 
-The standing goal is recorded in `.audit/goal.md`. This report separates implemented behavior from observed runtime results.
+This report separates implemented behavior from observed runtime results.
 
 ## Implemented
 
