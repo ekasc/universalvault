@@ -1,0 +1,9 @@
+{
+  "cohortId": "cohort-01",
+  "group": "first-run",
+  "mission": "review",
+  "model": "deepseek-v4.1-flash",
+  "rounds": 1,
+  "observations": [],
+  "actions": []
+}

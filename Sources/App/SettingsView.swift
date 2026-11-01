@@ -1,162 +1,148 @@
-import SwiftUI
-import Core
-import VaultSecurity
-import Insertion
 import AppKit
+import Core
+import Insertion
+import SwiftUI
+import VaultSecurity
 
 struct SettingsView: View {
-    @EnvironmentObject var appState: AppState
-    @State private var autoLockMinutes: Int = 5
-    @State private var requireAuthForSensitive: Bool = true
-    @State private var showPreviews: Bool = false
-    @State private var status: String?
-    @State private var passphrase: String = ""
-    @State private var showPassphrasePrompt = false
-    @State private var pendingImportURL: URL?
-    @State private var pendingExportURL: URL?
-    @State private var pendingExport = false
-    @State private var pendingImported: VaultPayload?
-    @State private var showReplaceConfirmation = false
+  @EnvironmentObject var appState: AppState
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var settings = VaultSettings()
+  @State private var loadedGeneration: UUID?
+  @State private var saving = false
+  @State private var saveTask: Task<Void, Never>?
+  @State private var status: String?
+  @State private var shortcut: HotKeyShortcut = .default
+  @State private var accessibilityGranted = false
+  @State private var transfer: BackupTransferMode?
 
-    private var payload: VaultPayload? { appState.session.currentPayload }
+  private var session: VaultSession { appState.session }
 
-    var body: some View {
-        Form {
-            Section("General") {
-                Stepper("Auto-lock after \(autoLockMinutes) min", value: $autoLockMinutes, in: 1...1440)
-                Toggle("Require authentication for sensitive fields", isOn: $requireAuthForSensitive)
-                Toggle("Show value previews", isOn: $showPreviews)
-            }
-            Section("Permissions") {
-                Text(AccessibilityPermission.isTrusted() ? "Accessibility: granted" : "Accessibility: not granted")
-                if !AccessibilityPermission.isTrusted() {
-                    Button("Request Accessibility") { _ = AccessibilityPermission.requestPrompt() }
-                }
-            }
-            Section("Backup") {
-                Button("Export encrypted backup") { exportBackup() }
-                Button("Import encrypted backup") { importBackup() }
-            }
-            if let status {
-                Section { Text(status).foregroundStyle(.secondary).font(.caption) }
-            }
+  var body: some View {
+    Form {
+      if !session.isUnlocked {
+        Section {
+          Text("Unlock the vault to change vault settings or export a backup.")
+            .foregroundStyle(.secondary)
         }
-        .padding()
-        .frame(width: 420)
-        .onAppear { load() }
-        .onChange(of: appState.session.isUnlocked) { _, unlocked in
-            if !unlocked {
-                pendingImported = nil
-                showReplaceConfirmation = false
-                passphrase = ""
-            }
+      }
+      Section("General") {
+        Stepper(
+          "Lock protected items after \(settings.autoLockMinutes) min",
+          value: $settings.autoLockMinutes,
+          in: AutoLock.minimumMinutes...AutoLock.maximumMinutes
+        )
+        .accessibilityLabel("Protected items lock timeout in minutes")
+        .accessibilityIdentifier("settings.autoLock")
+        Toggle(
+          "Require authentication for sensitive fields",
+          isOn: $settings.requireAuthForSensitiveInsert
+        )
+        .accessibilityLabel("Require authentication for sensitive fields")
+        .accessibilityIdentifier("settings.requireAuthentication")
+        Toggle("Show value previews", isOn: $settings.showValuePreviews)
+          .accessibilityLabel("Show value previews")
+          .accessibilityIdentifier("settings.previews")
+        if saving { ProgressView("Saving settings…").controlSize(.small) }
+      }
+      .disabled(!session.isUnlocked || loadedGeneration != session.sessionGeneration || saving)
+      Section("Global Shortcut") {
+        ShortcutRecorderView(current: shortcut) { candidate in
+          if let failure = appState.updateShortcut(candidate) {
+            status = failure
+          } else {
+            shortcut = candidate
+            status = "Shortcut set to \(candidate.displayString)."
+          }
         }
-        .onChange(of: autoLockMinutes) { _, _ in save() }
-        .onChange(of: requireAuthForSensitive) { _, _ in save() }
-        .onChange(of: showPreviews) { _, _ in save() }
-        .alert("Passphrase", isPresented: $showPassphrasePrompt) {
-            SecureField("Passphrase", text: $passphrase)
-            Button("Cancel", role: .cancel) { pendingImportURL = nil; pendingExportURL = nil; pendingExport = false }
-            Button("OK") { performPassphrase() }
-        } message: {
-            Text("Enter backup passphrase.")
+      }
+      Section("Permissions") {
+        Text(accessibilityGranted ? "Accessibility: granted" : "Accessibility: not granted")
+        if !accessibilityGranted {
+          Button("Request Accessibility") {
+            accessibilityGranted = AccessibilityPermission.requestPrompt()
+          }
+          Text("After granting access in System Settings, return here to refresh the status.")
+            .font(.caption).foregroundStyle(.secondary)
         }
-        .confirmationDialog("Replace vault contents with imported backup?", isPresented: $showReplaceConfirmation) {
-            Button("Replace", role: .destructive) {
-                if let imported = pendingImported {
-                    Task {
-                        do {
-                            try await appState.session.mutate { p in
-                                p.items = imported.items
-                                p.categories = imported.categories
-                                p.profiles = imported.profiles
-                                p.settings = imported.settings
-                            }
-                            await MainActor.run { status = "Imported." }
-                        } catch {
-                            await MainActor.run { status = "Import failed: \\(error.localizedDescription)" }
-                        }
-                    }
-                }
-                pendingImported = nil
-            }
-            Button("Cancel", role: .cancel) { pendingImported = nil }
+        Button("Refresh permission status") { refreshPermission() }
+      }
+      Section("Backup") {
+        Button("Export encrypted backup…") { transfer = .export }
+          .disabled(!session.isUnlocked)
+          .accessibilityIdentifier("backup.export")
+        Button("Restore encrypted backup…") {
+          transfer = session.isUnlocked ? .replace : .recover
         }
+        .accessibilityIdentifier("backup.restore")
+      }
+      if let status {
+        Section { Text(status).textSelection(.enabled) }
+      }
     }
+    .formStyle(.grouped)
+    .frame(minWidth: 440, idealWidth: 500, minHeight: 460, idealHeight: 600)
+    .onAppear {
+      shortcut = appState.hotKey.current
+      refreshPermission()
+      load()
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active { refreshPermission() }
+    }
+    .onChange(of: session.sessionGeneration) { _, _ in
+      saveTask?.cancel()
+      saving = false
+      status = nil
+      load()
+    }
+    .onChange(of: session.currentPayload?.settings) { _, _ in
+      if !saving { load() }
+    }
+    .onChange(of: settings) { _, updated in save(updated) }
+    .onDisappear {
+      saveTask?.cancel()
+      saving = false
+      loadedGeneration = nil
+    }
+    .sheet(item: $transfer) { mode in
+      BackupTransferView(mode: mode).environmentObject(appState)
+    }
+  }
 
-    private func load() {
-        if let p = payload {
-            autoLockMinutes = p.settings.autoLockMinutes
-            requireAuthForSensitive = p.settings.requireAuthForSensitiveInsert
-            showPreviews = p.settings.showValuePreviews
+  private func refreshPermission() {
+    accessibilityGranted = AccessibilityPermission.isTrusted()
+  }
+
+  private func load() {
+    settings = session.currentPayload?.settings ?? VaultSettings()
+    loadedGeneration = session.isUnlocked ? session.sessionGeneration : nil
+  }
+
+  private func save(_ snapshot: VaultSettings) {
+    guard !saving, session.isUnlocked, loadedGeneration == session.sessionGeneration,
+      snapshot != session.currentPayload?.settings
+    else { return }
+    let generation = session.sessionGeneration
+    saving = true
+    saveTask = Task { @MainActor in
+      do {
+        try Task.checkCancellation()
+        try await session.mutate(actionName: "Change Settings") { payload in
+          guard session.sessionGeneration == generation, session.isUnlocked else {
+            throw VaultSessionError.supersededRequest
+          }
+          try Task.checkCancellation()
+          payload.settings = snapshot
         }
+        guard session.sessionGeneration == generation, !Task.isCancelled else { return }
+        status = "Settings saved."
+      } catch {
+        guard session.sessionGeneration == generation, !Task.isCancelled else { return }
+        status = "Settings could not be saved: \(error.localizedDescription)"
+      }
+      saving = false
+      load()
     }
-
-    private func save() {
-        Task {
-            do {
-                try await appState.session.mutate { p in
-                    p.settings.autoLockMinutes = autoLockMinutes
-                    p.settings.requireAuthForSensitiveInsert = requireAuthForSensitive
-                    p.settings.showValuePreviews = showPreviews
-                }
-                await MainActor.run { status = "Saved." }
-            } catch {
-                await MainActor.run { status = "Save failed: \\(error.localizedDescription)" }
-            }
-        }
-    }
-
-    private func exportBackup() {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "UniversalVault-backup.uvbackup"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        pendingExportURL = url
-        pendingExport = true
-        passphrase = ""
-        showPassphrasePrompt = true
-    }
-
-    private func performPassphrase() {
-        if pendingExport, let url = pendingExportURL {
-            pendingExport = false
-            let p = passphrase
-            Task {
-                do {
-                    let data = try appState.session.savePayloadToBackup(passphrase: p)
-                    try data.write(to: url)
-                    await MainActor.run { status = "Exported." }
-                } catch {
-                    await MainActor.run { status = "Export failed: \\(error.localizedDescription)" }
-                }
-            }
-            pendingExportURL = nil
-        } else if let url = pendingImportURL {
-            let p = passphrase
-            Task {
-                do {
-                    let data = try Data(contentsOf: url)
-                    let imported = try VaultSession.importBackup(data, passphrase: p)
-                    await MainActor.run {
-                        pendingImported = imported
-                        showReplaceConfirmation = true
-                    }
-                } catch {
-                    await MainActor.run { status = "Import failed: \\(error.localizedDescription)" }
-                }
-            }
-            pendingImportURL = nil
-        }
-        passphrase = ""
-    }
-
-    private func importBackup() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        pendingImportURL = url
-        passphrase = ""
-        showPassphrasePrompt = true
-    }
-
+  }
 }

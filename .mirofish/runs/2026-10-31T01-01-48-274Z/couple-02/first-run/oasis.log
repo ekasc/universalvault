@@ -1,0 +1,37 @@
+============================================================
+OASIS Reddit模拟
+配置文件: /Users/ekassinghchhabra/Projects/UniversalVault/.mirofish/runs/2026-10-31T01-01-48-274Z/couple-02/first-run/simulation_config.json
+模拟ID: swarm-couple-02-first-run-1793408564024
+等待命令模式: 禁用
+============================================================
+
+轮数已截断: 2 -> 1 (max_rounds=1)
+
+模拟参数:
+  - 总模拟时长: 1小时
+  - 每轮时间: 30分钟
+  - 总轮数: 1
+  - 最大轮数限制: 1
+  - Agent数量: 2
+
+初始化LLM模型...
+LLM配置: model=deepseek-v4.1-flash, base_url=http://127.0.0.1:5051/v1...
+加载Agent Profile...
+{'user_profile': 'Dana Whitfield is a fictional person. Goals: keep four hundred records consistent; audit what changed and when. Expectations: saving is visible; search finds a field by any name I gave it. Tendencies: types ahead of the interface; tests undo, duplicate, and delete; notices when a list reorders itself. Assumptions: a search box searches everything I can see. Technical knowledge: Bookkeeper; heavy spreadsheet user, not a programmer. Privacy expectation: high. Accessibility needs: larger text.', 'mbti': '', 'gender': 'other', 'age': 50, 'country': 'en-US'}
+{'user_profile': 'Mira Castellanos is a fictional person. Goals: keep her documents away from the family Mac; recover anything she deletes. Expectations: other accounts cannot read her items; a backup restores what she saved. Tendencies: shares the Mac with a teenager; quits apps instead of locking them; believes deleted means gone. Assumptions: logging out of the Mac is the same as locking the vault. Technical knowledge: Uses a phone for everything; the Mac is the household computer. Privacy expectation: high.', 'mbti': '', 'gender': 'other', 'age': 40, 'country': 'es-ES'}
+创建OASIS环境...
+db_path /Users/ekassinghchhabra/Projects/UniversalVault/.mirofish/runs/2026-10-31T01-01-48-274Z/couple-02/first-run/reddit_simulation.db
+环境初始化完成
+
+执行初始事件 (1条初始帖子)...
+  已发布 1 条初始帖子
+
+开始模拟循环...
+  [Day 1, 00:00] Round 1/1 (100.0%) - 2 agents active - elapsed: 10.5s
+
+模拟循环完成!
+  - 总耗时: 10.5秒
+  - 数据库: /Users/ekassinghchhabra/Projects/UniversalVault/.mirofish/runs/2026-10-31T01-01-48-274Z/couple-02/first-run/reddit_simulation.db
+环境已关闭
+============================================================
+模拟进程已退出

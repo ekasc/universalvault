@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "mirofish-swarm-raw/1",
+  "simulation_id": "swarm-couple-01-first-run-1793408490",
+  "couple_id": "couple-01",
+  "group": "first-run",
+  "model": "deepseek-v4.1-flash",
+  "rounds": 1,
+  "started_at": "2026-10-31T01:01:17.367034+00:00",
+  "finished_at": "2026-10-31T01:01:30.835386+00:00",
+  "agent_map": {
+    "0": "p-ravi",
+    "1": "p-sam"
+  },
+  "posts": [
+    {
+      "agent_id": 0,
+      "content": "UniversalVault is a macOS menu-bar app that stores structured personal records encrypted on this Mac. Control+Option+V opens a search palette over whatever app you are in; search a field, press Return, and the value is typed into the focused field. An item can be marked protected, which seals its fields under a second key and asks for Touch ID before they are read. An item can also be marked for agents, which lets a local command print its non-sensitive fields as JSON. The vault opens at launch without a prompt. Sleep, screen lock, or an inactivity timeout close protected items only; Vault > Lock closes everything. There is no cloud sync.\n\nIt is your first ten minutes with it. Describe what you expected before you opened it, what you looked for, what you tried, and what you think the product should have told you at each step. Say where you stopped and why.",
+      "created_at": "2026-10-30 18:01:30.210988"
+    }
+  ],
+  "comments": [
+    {
+      "agent_id": 0,
+      "post_id": 1,
+      "content": "Honestly my whole reason to try this is so I stop retyping my address and card number into forms. What I expected: hit Control+Option+V anywhere, type \"address\", press Return, done. What I did: it opened at launch with no prompt, so I assumed it was already unlocked and ready, and I just started using it. I never opened settings. I never read the part about protected items — I closed that window. Where I stopped: the first time something asked for Touch ID for what felt like an ordinary detail. If it's my card, fine, ask away. If it's my name or address, it should just type it. Tell me up front at launch, in one line: \"your address and phone type straight in, your card asks for Touch ID\" — that's all I needed to know.",
+      "created_at": "2026-10-30 18:07:19.770148"
+    },
+    {
+      "agent_id": 1,
+      "post_id": 1,
+      "content": "Reading this as someone who reads threat models for a living, the line that stops me is \"The vault opens at launch without a prompt.\" That tells me the whole vault key is resident and everything I haven't marked protected is already plaintext to *anything running as me* — a browser extension, a rogue CLI, a malicious npm postinstall, whatever. So \"protected\" isn't really a separate security boundary; it's a second gate on top of a door that's already open at boot. I'd want the copy to say that plainly (\"unprotected items are readable by any process running as you; protected items add a Touch ID gate\") instead of letting \"encrypted on this Mac\" sound like a lock in the interface.\n\nConcrete things I'd test in the first ten minutes:\n- Whose process actually holds the decrypted buffer at launch, and can I read unprotected fields with a trivial `cat`/script as my user with the app just sitting in the menu bar?\n- The agents/JSON export claims \"non-sensitive fields\" — what decides that? If the vault is unlocked, what stops the same command from being pointed at protected fields, or the exclusion being a naming convention rather than a hard gate?\n- Sleep/screen-lock/inactivity close *protected items only* — so after a screen lock, unprotected data is still readable at rest in RAM. Is that key zeroed or just the UI gated? \"Closed\" in a menu-bar app often means \"hidden,\" not \"crypto-erased.\"\n\nWhere I'd stop: I wouldn't trust \"protected\" as a lock until I can prove the unprotected path is genuinely unreadable to another process. Right now it reads as *looks protected* rather than *is protected*. Support page should distinguish \"encrypted at rest\" from \"decrypted at launch, readable by anything as you\" on the very first screen — that one distinction is the whole product.",
+      "created_at": "2026-10-30 18:08:20.373808"
+    }
+  ]
+}

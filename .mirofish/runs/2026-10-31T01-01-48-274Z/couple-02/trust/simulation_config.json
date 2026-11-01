@@ -1,0 +1,84 @@
+{
+  "simulation_id": "swarm-couple-02-trust-1793408593649",
+  "llm_model": "deepseek-v4.1-flash",
+  "time_config": {
+    "total_simulation_hours": 1,
+    "minutes_per_round": 30,
+    "agents_per_hour_min": 2,
+    "agents_per_hour_max": 2,
+    "peak_hours": [],
+    "off_peak_hours": [],
+    "peak_activity_multiplier": 1,
+    "off_peak_activity_multiplier": 1
+  },
+  "agent_configs": [
+    {
+      "agent_id": 0,
+      "active_hours": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23
+      ],
+      "activity_level": 1
+    },
+    {
+      "agent_id": 1,
+      "active_hours": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23
+      ],
+      "activity_level": 1
+    }
+  ],
+  "event_config": {
+    "initial_posts": [
+      {
+        "poster_agent_id": 0,
+        "content": "UniversalVault is a macOS menu-bar app that stores structured personal records encrypted on this Mac. Control+Option+V opens a search palette over whatever app you are in; search a field, press Return, and the value is typed into the focused field. An item can be marked protected, which seals its fields under a second key and asks for Touch ID before they are read. An item can also be marked for agents, which lets a local command print its non-sensitive fields as JSON. The vault opens at launch without a prompt. Sleep, screen lock, or an inactivity timeout close protected items only; Vault > Lock closes everything. There is no cloud sync.\n\nDecide whether to keep your identity documents and card details in it. What evidence would convince you it is safe? What would make you stop? What would you need to see that you cannot see today?"
+      }
+    ]
+  }
+}

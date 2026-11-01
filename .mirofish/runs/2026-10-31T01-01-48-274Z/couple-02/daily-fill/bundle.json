@@ -1,0 +1,20 @@
+{
+  "coupleId": "couple-02",
+  "group": "daily-fill",
+  "model": "deepseek-v4.1-flash",
+  "rounds": 1,
+  "observations": [
+    {
+      "coupleId": "couple-02",
+      "group": "daily-fill",
+      "personaId": "p-dana",
+      "text": "I tested this as a bookkeeper who lives in spreadsheets, not code. I filled three vendor forms in other apps using the Control+Option+V palette, then added a client record, protected it, and went to lunch. Coming back: the protected item asked for Touch ID as described, and unlocking was quick. The important part for me is record consistency, so I tried to undo a field edit, duplicate an item, and delete the duplicate. I could not tell from the description whether an edit is undoable or whether deleting an item is truly reversible, and I did not see how duplicate detection works. I also noticed the item list can reorder itself depending on recent use, which makes me nervous when I am reconciling four hundred records; I would want a stable sort and a visible indication of what changed and when. My search expectation is that the palette searches every field I can see, including custom field names I invented, not just the standard ones. On accessibility, the palette text needs to respect larger system text sizing. On privacy, no cloud sync is good, but “opens at launch without a prompt” means anything not marked protected is readable to anyone at the unlocked Mac. For non-sensitive fields printed by a local agent, I would want a very clear boundary and an audit line showing which command read which item and when. What did the undo/duplicate/delete tests cost me? About ten minutes of hesitating before trusting the delete, and I would not store client data until I know whether the list order and the search scope are predictable."
+    },
+    {
+      "coupleId": "couple-02",
+      "group": "daily-fill",
+      "personaId": "p-mira",
+      "text": "Leo esto con el Mac de casa delante, que lo comparto con mi hijo adolescente, y hay dos cosas que me dejan intranquila. La primera: \"la bóveda se abre al arrancar sin pedir nada\". Yo siempre he dado por hecho que con cerrar sesión en el Mac ya quedaba todo a salvo, y por lo que cuentas eso no es así: para cerrarlo TODO hay que entrar en Vault > Lock a mano, y dormir la pantalla o bloquear solo cierra lo protegido. La segunda: lo de marcar un elemento \"para agentes\" y que un comando imprima campos en JSON. Para quien no vivimos en el Mac, eso suena a otra puerta abierta, aunque digas que son campos no sensibles. ¿Podrías explicar cómo se ve en el día a día sin saber de terminal, y qué pasa si alguien de la casa borra un registro sin querer? Yo tiendo a cerrar las apps en vez de bloquearlas y siempre pienso que lo borrado ya no está, así que necesito saber si hay forma de recuperarlo y cuánto cuesta tener esto bajo control."
+    }
+  ]
+}

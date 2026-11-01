@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "mirofish-swarm-raw/1",
+  "simulation_id": "swarm-couple-01-trust-1793408550",
+  "couple_id": "couple-01",
+  "group": "trust",
+  "model": "deepseek-v4.1-flash",
+  "rounds": 1,
+  "started_at": "2026-10-31T01:02:17.055085+00:00",
+  "finished_at": "2026-10-31T01:02:30.458797+00:00",
+  "agent_map": {
+    "0": "p-ravi",
+    "1": "p-sam"
+  },
+  "posts": [
+    {
+      "agent_id": 0,
+      "content": "UniversalVault is a macOS menu-bar app that stores structured personal records encrypted on this Mac. Control+Option+V opens a search palette over whatever app you are in; search a field, press Return, and the value is typed into the focused field. An item can be marked protected, which seals its fields under a second key and asks for Touch ID before they are read. An item can also be marked for agents, which lets a local command print its non-sensitive fields as JSON. The vault opens at launch without a prompt. Sleep, screen lock, or an inactivity timeout close protected items only; Vault > Lock closes everything. There is no cloud sync.\n\nDecide whether to keep your identity documents and card details in it. What evidence would convince you it is safe? What would make you stop? What would you need to see that you cannot see today?",
+      "created_at": "2026-10-30 18:02:29.103954"
+    }
+  ],
+  "comments": [
+    {
+      "agent_id": 0,
+      "post_id": 1,
+      "content": "This is exactly what I've been looking for. Control+Option+V and paste the field straight into any form — no retyping my address every time. And it doesn't ask for a fingerprint for the ordinary stuff, which is the part that usually makes me give up on these apps. It opens at launch with no prompt, so it's just there when I need it. Keeping my address and card details in it from day one.",
+      "created_at": "2026-10-30 18:07:25.935954"
+    },
+    {
+      "agent_id": 1,
+      "post_id": 1,
+      "content": "Reading this as a threat model, not a feature list. Three things I'd need to resolve before this goes anywhere near my passport scan or card details.\n\n1) \"The vault opens at launch without a prompt.\" That's the whole ballgame. Anything decrypted at launch is readable by anything running as me — every menu-bar utility, every npm postinstall, every script I've half-forgotten about. It also means the *index* is almost certainly in memory, which means your \"search a field\" palette is a plaintext oracle for anyone who can drive a keystroke. If the search index were built on demand from encrypted records under Touch ID, that's a very different product. Ask them which it is. The answer is probably \"the fast one.\"\n\n2) \"Protected\" is doing a lot of work here. Two thresholds on the same item — sealed under a second key, and separately \"marked for agents\" to print non-sensitive fields as JSON — means the app has an internal notion of which fields are non-sensitive, and that notion is fixed by the developer, not by me. I want per-field control, and I want the agent export to fail closed (refuse to emit anything) rather than trust a label someone else set. \"Non-sensitive\" is a claim about my data made by a stranger.\n\n3) The lock model is asymmetric in the wrong direction: sleep/lock/timeout seal *protected items only*, while Vault > Lock closes everything. So the default state after I shut the lid is \"vault open, unsealed items readable.\" That's a decision someone made — presumably to keep the menu-bar convenience feeling instant. It means the unsealed tier is the tier that's actually always available, and I'd be putting things there out of laziness within a week.\n\nWhat would make me stop: cloud sync appearing in a point release, an \"export all\" that doesn't re-prompt, or a second key stored somewhere recoverable \"for my convenience.\" What would move me forward: a written threat model, the key derivation and where the second key lives, a statement of what an unprivileged process running as me can read at launch, and a build I can reproduce. The clipboard/focused-field injection path deserves its own paragraph too — typing values into whatever's focused is a keylogger's best friend, and it's the one place a \"safe\" design leaks into an unsafe one.\n\nNo cloud sync is genuinely good. It's also the cheapest promise to keep. Evidence beats reassurance — until then, it's a nice menu-bar app, not a vault.",
+      "created_at": "2026-10-30 18:10:09.646434"
+    }
+  ]
+}

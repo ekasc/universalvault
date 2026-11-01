@@ -19,7 +19,7 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(r3.count, 1)
     }
     func testJSONRoundTrip() throws {
-        var item = VaultItem(title: "T", fields: [VaultField(key:"k",label:"L",type:.text,value:.text("v"))])
+        let item = VaultItem(title: "T", fields: [VaultField(key:"k",label:"L",type:.text,value:.text("v"))])
         let data = try JSONEncoder().encode(item)
         let dec = try JSONDecoder().decode(VaultItem.self, from: data)
         XCTAssertEqual(dec, item)

@@ -56,11 +56,12 @@ public enum VaultCrypto {
         }
         guard let boxData = Data(base64Encoded: env.sealedBox) else { throw CryptoEnvelopeError.invalidData }
         let box = try AES.GCM.SealedBox(combined: boxData)
-        do {
-            let plaintext = try AES.GCM.open(box, using: key, authenticating: Self.aad)
-            return try decoder.decode(VaultPayload.self, from: plaintext)
-        } catch {
-            throw CryptoEnvelopeError.decryptionFailed
-        }
+        let plaintext: Data
+        do { plaintext = try AES.GCM.open(box, using: key, authenticating: Self.aad) }
+        catch { throw CryptoEnvelopeError.decryptionFailed }
+        let payload: VaultPayload
+        do { payload = try decoder.decode(VaultPayload.self, from: plaintext) }
+        catch { throw CryptoEnvelopeError.invalidData }
+        return try payload.validated()
     }
 }

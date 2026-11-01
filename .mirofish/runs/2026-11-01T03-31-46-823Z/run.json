@@ -1,0 +1,26 @@
+{
+  "runId": "2026-11-01T03-31-46-823Z",
+  "project": "UniversalVault",
+  "model": "deepseek-v4.1-flash",
+  "rounds": 3,
+  "cohorts": [
+    "cohort-01"
+  ],
+  "product": "single-role",
+  "cohortsDerived": true,
+  "groups": [
+    "first-run",
+    "daily-fill",
+    "trust",
+    "alternatives"
+  ],
+  "missions": {
+    "first-run": "review",
+    "daily-fill": "review",
+    "trust": "review",
+    "alternatives": "alternatives"
+  },
+  "interaction": null,
+  "observations": 28,
+  "errors": []
+}

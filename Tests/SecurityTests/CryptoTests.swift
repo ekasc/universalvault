@@ -13,6 +13,7 @@ final class FalseAuth: UserPresenceAuthenticating, @unchecked Sendable {
 
 final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
     private var data: Data?
+    private var sensitive: Data?
     func keyExists() throws -> Bool { data != nil }
     func loadKey(reason: String) throws -> SymmetricKey {
         guard let d = data else { throw KeyStoreError.notFound }
@@ -21,7 +22,16 @@ final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
     func storeKey(_ key: SymmetricKey) throws {
         data = key.withUnsafeBytes { Data($0) }
     }
-    func deleteKey() throws { data = nil }
+    func deleteKey() throws { data = nil; sensitive = nil }
+    func sensitiveKeyExists() throws -> Bool { sensitive != nil }
+    func loadSensitiveKey(reason: String, context: AuthenticatedContext?) throws -> SymmetricKey {
+        guard let sensitive else { throw KeyStoreError.notFound }
+        return SymmetricKey(data: sensitive)
+    }
+    func storeSensitiveKey(_ key: SymmetricKey) throws {
+        sensitive = key.withUnsafeBytes { Data($0) }
+    }
+    func deleteSensitiveKey() throws { sensitive = nil }
 }
 
 @MainActor final class CryptoTests: XCTestCase {
@@ -48,8 +58,10 @@ final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
     }
     @MainActor func testBackupRoundTrip() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
         let storage = try FileSystemVaultStorage(directory: url)
         let session = VaultSession(storage: storage, keyStore: InMemoryKeyStore(), auth: TestAuth())
+        defer { session.lock() }
         try await session.createNewVault()
         try await session.mutate { p in
             p.items.append(VaultItem(title: "B"))
@@ -71,6 +83,7 @@ final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
 
     @MainActor func testCreateVaultTwiceThrows() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
         let storage = try FileSystemVaultStorage(directory: url)
         let session = VaultSession(storage: storage, keyStore: InMemoryKeyStore(), auth: TestAuth())
         try await session.createNewVault()
@@ -84,6 +97,7 @@ final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
 
     @MainActor func testShortBackupPassphraseThrows() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
         let storage = try FileSystemVaultStorage(directory: url)
         let session = VaultSession(storage: storage, keyStore: InMemoryKeyStore(), auth: TestAuth())
         try await session.createNewVault()
@@ -92,6 +106,7 @@ final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
 
     @MainActor func testExistingKeyWithoutVaultThrows() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
         let storage = try FileSystemVaultStorage(directory: url)
         let keyStore = InMemoryKeyStore()
         try keyStore.storeKey(SymmetricKey(size: .bits256))
@@ -122,34 +137,37 @@ final class InMemoryKeyStore: VaultKeyStore, @unchecked Sendable {
 
 
 
-    @MainActor func testCreateVaultFalseAuthThrows() async throws {
+    /// Creating a vault no longer authenticates, so even an authenticator that
+    /// refuses everything must not be consulted.
+    @MainActor func testCreateVaultNeedsNoPresence() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
         let storage = try FileSystemVaultStorage(directory: url)
         let session = VaultSession(storage: storage, keyStore: InMemoryKeyStore(), auth: FalseAuth())
-        do {
-            try await session.createNewVault()
-            XCTFail("False authentication should prevent vault creation")
-        } catch {
-            // expected
-        }
-        XCTAssertFalse(storage.exists())
+        try await session.createNewVault()
+        XCTAssertTrue(session.isUnlocked)
+        XCTAssertTrue(storage.exists())
+        XCTAssertNil(session.lastError)
     }
 
-    @MainActor func testUnlockFalseAuthThrows() async throws {
+    @MainActor func testUnlockNeedsNoPresenceButProtectedItemsDo() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
         let storage = try FileSystemVaultStorage(directory: url)
         let keyStore = InMemoryKeyStore()
         let first = VaultSession(storage: storage, keyStore: keyStore, auth: TestAuth())
         try await first.createNewVault()
         first.lock()
         let second = VaultSession(storage: storage, keyStore: keyStore, auth: FalseAuth())
+        try await second.unlock()
+        XCTAssertTrue(second.isUnlocked, "The vault key opens without presence")
         do {
-            try await second.unlock()
-            XCTFail("False authentication should prevent unlock")
+            try await second.unlockSensitiveItems()
+            XCTFail("Protected items must require presence")
         } catch {
             // expected
         }
-        XCTAssertFalse(second.isUnlocked)
+        XCTAssertFalse(second.isSensitiveUnlocked)
     }
 
 }

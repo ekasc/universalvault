@@ -1,0 +1,41 @@
+name: Verify UniversalVault
+
+# macOS 26 and the Swift 6.2 toolchain are required. The package declares
+# `.macOS(.v26)`, so older hosted images cannot build it. This workflow has not
+# been executed on GitHub; the local verifier is `bash scripts/verify.sh`.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+      - name: Require a macOS 26 SDK
+        run: |
+          sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          case "$sdk" in
+            26.*|27.*) echo "SDK $sdk" ;;
+            *) echo "This runner provides macOS SDK $sdk; the package requires 26 or newer." >&2; exit 1 ;;
+          esac
+      - name: Verify and package
+        run: bash scripts/verify.sh
+      - name: Archive local app
+        run: ditto -c -k --sequesterRsrc --keepParent .build/UniversalVault.app .build/UniversalVault.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: UniversalVault-verification
+          path: |
+            .build/verification/*.log
+            .build/UniversalVault.zip
+          if-no-files-found: warn

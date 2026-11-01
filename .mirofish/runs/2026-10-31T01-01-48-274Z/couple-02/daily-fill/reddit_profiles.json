@@ -1,0 +1,30 @@
+[
+  {
+    "user_id": 0,
+    "persona_id": "p-dana",
+    "username": "dana-whitfield-0",
+    "name": "Dana Whitfield",
+    "bio": ". keep four hundred records consistent",
+    "persona": "Dana Whitfield is a fictional person. Goals: keep four hundred records consistent; audit what changed and when. Expectations: saving is visible; search finds a field by any name I gave it. Tendencies: types ahead of the interface; tests undo, duplicate, and delete; notices when a list reorders itself. Assumptions: a search box searches everything I can see. Technical knowledge: Bookkeeper; heavy spreadsheet user, not a programmer. Privacy expectation: high. Accessibility needs: larger text.",
+    "karma": 1000,
+    "created_at": "2026-10-31",
+    "age": 50,
+    "gender": "other",
+    "mbti": "",
+    "country": "en-US"
+  },
+  {
+    "user_id": 1,
+    "persona_id": "p-mira",
+    "username": "mira-castellanos-1",
+    "name": "Mira Castellanos",
+    "bio": ". keep her documents away from the family Mac",
+    "persona": "Mira Castellanos is a fictional person. Goals: keep her documents away from the family Mac; recover anything she deletes. Expectations: other accounts cannot read her items; a backup restores what she saved. Tendencies: shares the Mac with a teenager; quits apps instead of locking them; believes deleted means gone. Assumptions: logging out of the Mac is the same as locking the vault. Technical knowledge: Uses a phone for everything; the Mac is the household computer. Privacy expectation: high.",
+    "karma": 1000,
+    "created_at": "2026-10-31",
+    "age": 40,
+    "gender": "other",
+    "mbti": "",
+    "country": "es-ES"
+  }
+]

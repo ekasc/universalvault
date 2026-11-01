@@ -1,0 +1,109 @@
+{
+  "personas": [
+    {
+      "id": "p-ravi",
+      "displayName": "Ravi Menon",
+      "tier": "normal",
+      "ageRange": "30-39",
+      "locale": "en-IN",
+      "goals": [
+        "fill forms without retyping",
+        "keep his address and card handy"
+      ],
+      "expectations": [
+        "the shortcut works in any app",
+        "nothing asks for a fingerprint for ordinary details"
+      ],
+      "tendencies": [
+        "presses the primary button first",
+        "never opens settings",
+        "closes windows instead of reading them"
+      ],
+      "technicalKnowledge": "Comfortable with apps, not with security settings.",
+      "privacyExpectation": "medium",
+      "accessibilityNeeds": [],
+      "assumptions": [
+        "if an app opens at launch, it is already unlocked for me"
+      ]
+    },
+    {
+      "id": "p-sam",
+      "displayName": "Sam Okafor",
+      "tier": "critical",
+      "ageRange": "25-34",
+      "locale": "en-GB",
+      "goals": [
+        "know exactly what protects what",
+        "catch anything that only looks protected"
+      ],
+      "expectations": [
+        "a lock in the interface means the data is unreadable without me"
+      ],
+      "tendencies": [
+        "reads the security page before signing in",
+        "tests the unhappy path on purpose",
+        "distrusts copy that sounds reassuring"
+      ],
+      "technicalKnowledge": "Security engineer; reads threat models for a living.",
+      "privacyExpectation": "very high",
+      "accessibilityNeeds": [],
+      "assumptions": [
+        "anything decrypted at launch is readable by anything running as me"
+      ]
+    },
+    {
+      "id": "p-dana",
+      "displayName": "Dana Whitfield",
+      "tier": "power",
+      "ageRange": "45-54",
+      "locale": "en-US",
+      "goals": [
+        "keep four hundred records consistent",
+        "audit what changed and when"
+      ],
+      "expectations": [
+        "saving is visible",
+        "search finds a field by any name I gave it"
+      ],
+      "tendencies": [
+        "types ahead of the interface",
+        "tests undo, duplicate, and delete",
+        "notices when a list reorders itself"
+      ],
+      "technicalKnowledge": "Bookkeeper; heavy spreadsheet user, not a programmer.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [
+        "larger text"
+      ],
+      "assumptions": [
+        "a search box searches everything I can see"
+      ]
+    },
+    {
+      "id": "p-mira",
+      "displayName": "Mira Castellanos",
+      "tier": "normal",
+      "ageRange": "35-44",
+      "locale": "es-ES",
+      "goals": [
+        "keep her documents away from the family Mac",
+        "recover anything she deletes"
+      ],
+      "expectations": [
+        "other accounts cannot read her items",
+        "a backup restores what she saved"
+      ],
+      "tendencies": [
+        "shares the Mac with a teenager",
+        "quits apps instead of locking them",
+        "believes deleted means gone"
+      ],
+      "technicalKnowledge": "Uses a phone for everything; the Mac is the household computer.",
+      "privacyExpectation": "high",
+      "accessibilityNeeds": [],
+      "assumptions": [
+        "logging out of the Mac is the same as locking the vault"
+      ]
+    }
+  ]
+}

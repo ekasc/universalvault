@@ -1,0 +1,14 @@
+{
+  "runId": "2026-10-31T01-01-17-109Z",
+  "project": "UniversalVault",
+  "model": "deepseek-v4.1-flash",
+  "rounds": 1,
+  "couples": [
+    "couple-01"
+  ],
+  "groups": [
+    "first-run"
+  ],
+  "observations": 2,
+  "errors": []
+}

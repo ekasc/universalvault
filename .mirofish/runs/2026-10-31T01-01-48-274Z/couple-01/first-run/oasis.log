@@ -1,0 +1,37 @@
+============================================================
+OASIS Reddit模拟
+配置文件: /Users/ekassinghchhabra/Projects/UniversalVault/.mirofish/runs/2026-10-31T01-01-48-274Z/couple-01/first-run/simulation_config.json
+模拟ID: swarm-couple-01-first-run-1793408508275
+等待命令模式: 禁用
+============================================================
+
+轮数已截断: 2 -> 1 (max_rounds=1)
+
+模拟参数:
+  - 总模拟时长: 1小时
+  - 每轮时间: 30分钟
+  - 总轮数: 1
+  - 最大轮数限制: 1
+  - Agent数量: 2
+
+初始化LLM模型...
+LLM配置: model=deepseek-v4.1-flash, base_url=http://127.0.0.1:5051/v1...
+加载Agent Profile...
+{'user_profile': 'Ravi Menon is a fictional person. Goals: fill forms without retyping; keep his address and card handy. Expectations: the shortcut works in any app; nothing asks for a fingerprint for ordinary details. Tendencies: presses the primary button first; never opens settings; closes windows instead of reading them. Assumptions: if an app opens at launch, it is already unlocked for me. Technical knowledge: Comfortable with apps, not with security settings. Privacy expectation: medium.', 'mbti': '', 'gender': 'other', 'age': 35, 'country': 'en-IN'}
+{'user_profile': 'Sam Okafor is a fictional person. Goals: know exactly what protects what; catch anything that only looks protected. Expectations: a lock in the interface means the data is unreadable without me. Tendencies: reads the security page before signing in; tests the unhappy path on purpose; distrusts copy that sounds reassuring. Assumptions: anything decrypted at launch is readable by anything running as me. Technical knowledge: Security engineer; reads threat models for a living. Privacy expectation: very high.', 'mbti': '', 'gender': 'other', 'age': 30, 'country': 'en-GB'}
+创建OASIS环境...
+db_path /Users/ekassinghchhabra/Projects/UniversalVault/.mirofish/runs/2026-10-31T01-01-48-274Z/couple-01/first-run/reddit_simulation.db
+环境初始化完成
+
+执行初始事件 (1条初始帖子)...
+  已发布 1 条初始帖子
+
+开始模拟循环...
+  [Day 1, 00:00] Round 1/1 (100.0%) - 2 agents active - elapsed: 9.5s
+
+模拟循环完成!
+  - 总耗时: 9.5秒
+  - 数据库: /Users/ekassinghchhabra/Projects/UniversalVault/.mirofish/runs/2026-10-31T01-01-48-274Z/couple-01/first-run/reddit_simulation.db
+环境已关闭
+============================================================
+模拟进程已退出
