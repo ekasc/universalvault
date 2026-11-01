@@ -57,7 +57,6 @@ The initial in-process modal driver exposed actor reentrancy failures and attemp
 - `.build/native-verification/result.json`, when the complete native run succeeds
 - `.build/native-verification/save-panel-driver.json`
 - `.build/native-verification/*-window.png` and matching accessibility JSON
-- `.audit/decisions.tsv`
 
 View-cache screenshots without the `-window` suffix are diagnostic only. They do not prove complete rendering of native controls or system materials.
 

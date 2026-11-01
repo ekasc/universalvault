@@ -39,7 +39,7 @@ Status legend: `Verified` = automated test or documented build evidence. `Fixed 
 | Stale target cannot receive insertion | Fixed (not integration-tested) | Focused element equality re-check |
 | Focus changes cancel insertion | Fixed (not integration-tested) | Validation compares original element |
 | New palette transaction invalidates old transaction | Partially implemented | Operation ID is tracked; a second palette invocation replaces the active target but does not carry a separate operation executor race test |
-| Sensitive search data is invalidated on lock | Fixed (not integration-tested) | `clearSensitiveState` calls `searchEngine` state clearing indirectly through session lock callback |
+| Sensitive search data is invalidated on lock | Verified | `AppStateTests.testSealingInvalidatesTheIndexWithoutThePaletteView` |
 | No automatic clipboard fallback | Static inspection | No clipboard reads or writes in insertion path |
 | Persistence failure retains the open editor draft | Fixed (not integration-tested) | Save error appears globally and in the editor; unsaved drafts are not recovered after window close |
 | Out-of-order autosave tasks cannot restore stale state | Fixed (not integration-tested) | Queue serializes writes and checks no-ops at execution; Core tests cover rapid revert and latest fallback, not SwiftUI task scheduling |

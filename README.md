@@ -189,6 +189,5 @@ Store credentials in secret-typed fields or protected items.
 - `ARCHITECTURE.md`: module and data-flow design.
 - `SECURITY.md`: threat model, controls, and evidence status.
 - `COMPATIBILITY.md`: insertion compatibility status.
-- `IMPLEMENTATION_REPORT.md`: repaired defects and remaining work.
 - `SECURITY_REGRESSION_MATRIX.md`: regression matrix for the security requirements.
 - `COMPLETION_REPORT.md`: current implementation and verification status.
