@@ -93,10 +93,14 @@ struct VaultCommands: Commands {
                 .disabled(items == nil)
         }
         CommandMenu("Vault") {
-            Button("Undo \(appState.session.undoActionName)") { appState.restoreHistory(undo: true) }
+            Button("Undo \(appState.session.undoActionName)") {
+                Task { await appState.restoreHistory(undo: true) }
+            }
                 .keyboardShortcut("z", modifiers: [.command, .option])
                 .disabled(!appState.session.canUndo)
-            Button("Redo \(appState.session.redoActionName)") { appState.restoreHistory(undo: false) }
+            Button("Redo \(appState.session.redoActionName)") {
+                Task { await appState.restoreHistory(undo: false) }
+            }
                 .keyboardShortcut("z", modifiers: [.command, .option, .shift])
                 .disabled(!appState.session.canRedo)
             Divider()

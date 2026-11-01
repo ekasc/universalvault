@@ -313,9 +313,12 @@ struct ItemEditorView: View {
     }
     .buttonStyle(.plain)
     .fixedSize()
-    .help(item.isSensitive
-      ? "Fields are sealed with the Touch ID key"
-      : "Require Touch ID to read this item's fields")
+    .disabled(isLocked)
+    .help(isLocked
+      ? "Unlock this item before removing its protection"
+      : item.isSensitive
+        ? "Fields are sealed with the Touch ID key"
+        : "Require Touch ID to read this item's fields")
     .accessibilityLabel("Require Touch ID for this item")
     .accessibilityValue(item.isSensitive ? "on" : "off")
     .accessibilityIdentifier("item.protection")

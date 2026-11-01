@@ -129,6 +129,53 @@ private actor CountingAuth: UserPresenceAuthenticating {
         XCTAssertFalse(String(decoding: backup, as: UTF8.self).contains(secret))
     }
 
+    /// Exporting from an *unlocked* session must not put protected fields in the
+    /// passphrase-only backup. The UI calls `payloadForBackup` for exactly this.
+    func testExportFromUnlockedSessionKeepsProtectedItemsSealed() async throws {
+        let (session, _) = try makeSession()
+        defer { session.lock() }
+        try await session.createNewVault()
+        try await session.unlockSensitiveItems()
+        try await session.mutate { $0.items.append(protectedItem) }
+        XCTAssertEqual(session.currentPayload?.items.first?.fields.count, 1)
+
+        let sealed = try session.payloadForBackup()
+        XCTAssertEqual(sealed.items.first?.fields.count, 0)
+        XCTAssertNotNil(sealed.items.first?.sealedFields)
+
+        let backup = try VaultSession.exportBackup(sealed, passphrase: "synthetic-passphrase")
+        XCTAssertFalse(String(decoding: backup, as: UTF8.self).contains(secret))
+        let imported = try VaultSession.importBackup(backup, passphrase: "synthetic-passphrase")
+        XCTAssertTrue(imported.items.first?.isLocked ?? false)
+    }
+
+    /// A backup written before the export sealed its payload can carry protected
+    /// fields in the clear. Recovery must seal them rather than store plaintext.
+    func testRecoverySealsProtectedItemsFromAnOlderBackup() async throws {
+        let legacy = VaultPayload(items: [protectedItem])
+        let backup = try VaultSession.exportBackup(legacy, passphrase: "synthetic-passphrase")
+        let imported = try VaultSession.importBackup(backup, passphrase: "synthetic-passphrase")
+        XCTAssertEqual(imported.items.first?.fields.count, 1, "fixture must start unsealed")
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UniversalVaultReclaim-\(UUID().uuidString)", isDirectory: true)
+        temporaryDirectories.append(directory)
+        let keys = InMemoryKeyStore()
+        let session = VaultSession(
+            storage: try FileSystemVaultStorage(directory: directory),
+            keyStore: keys,
+            auth: TestAuth())
+        defer { session.lock() }
+
+        _ = try await session.recoverContents(with: imported)
+
+        let stored = try XCTUnwrap(session.currentPayload?.items.first)
+        XCTAssertNotNil(stored.sealedFields)
+        XCTAssertTrue(stored.fields.isEmpty)
+        XCTAssertTrue(stored.isLocked)
+        XCTAssertFalse(session.isSensitiveUnlocked)
+    }
+
     /// The launch path must not touch user presence: that is the whole point of
     /// the vault opening by itself.
     func testOpeningAtLaunchNeverAsksForPresence() async throws {

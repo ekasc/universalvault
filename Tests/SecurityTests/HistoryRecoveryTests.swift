@@ -25,11 +25,11 @@ import XCTest
       }
       XCTAssertTrue(session.canUndo)
       let generation = session.sessionGeneration
-      try session.undo()
+      try await session.undo()
       XCTAssertTrue(try XCTUnwrap(session.currentPayload).items.isEmpty)
       XCTAssertNotEqual(session.sessionGeneration, generation)
       XCTAssertTrue(session.canRedo)
-      try session.redo()
+      try await session.redo()
       XCTAssertEqual(session.currentPayload?.items.first?.title, "Synthetic")
       session.lock()
       XCTAssertFalse(session.canUndo)
@@ -46,7 +46,10 @@ import XCTest
       try await session.mutate { $0.items.append(VaultItem(title: "Synthetic")) }
       let external = Data("external replacement".utf8)
       try storage.write(external)
-      XCTAssertThrowsError(try session.undo())
+      do {
+        try await session.undo()
+        XCTFail("Undo must fail when the file was replaced underneath it")
+      } catch {}
       XCTAssertTrue(session.canUndo)
       XCTAssertFalse(session.canRedo)
       XCTAssertEqual(try storage.read(), external)

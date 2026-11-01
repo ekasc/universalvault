@@ -156,6 +156,37 @@ private final class SyntheticKeys: VaultKeyStore, @unchecked Sendable {
       "A locked field must not survive in the search index")
   }
 
+  /// Sealing must invalidate the palette's prepared index on its own, without
+  /// relying on the palette view being mounted to notice.
+  func testSealingInvalidatesTheIndexWithoutThePaletteView() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "UV-app-test-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let session = VaultSession(
+      storage: try FileSystemVaultStorage(directory: directory), keyStore: SyntheticKeys(),
+      auth: SyntheticAuth())
+    defer { session.lock() }
+    let state = AppState(session: session, systemIntegration: false)
+    try await session.createNewVault()
+    try await session.unlockSensitiveItems()
+    try await session.mutate {
+      $0.items.append(
+        VaultItem(
+          title: "Bank",
+          fields: [VaultField(key: "pin", label: "PIN", type: .secret, value: .secret("1234"))],
+          isSensitive: true))
+    }
+    state.paletteQuery = "PIN"
+    state.refreshResults()
+    XCTAssertEqual(state.paletteResults.count, 1)
+
+    session.lockSensitiveItems()
+
+    XCTAssertTrue(
+      state.paletteResults.isEmpty,
+      "Sealing must clear the prepared index without a manual refresh")
+  }
+
   func testStaleSelectionIsRejectedByActualInsertAction() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
       "UV-app-test-\(UUID())")

@@ -38,6 +38,29 @@ private actor SuspendedAuth: UserPresenceAuthenticating {
     }
 }
 
+/// Slows the CAS write so a lock can land while it is in flight.
+private final class SlowWriteStorage: VaultStorage, @unchecked Sendable {
+    private let inner: VaultStorage
+    private let delay: TimeInterval
+
+    init(_ inner: VaultStorage, delay: TimeInterval = 0.25) {
+        self.inner = inner
+        self.delay = delay
+    }
+
+    var url: URL { inner.url }
+    func read() throws -> Data? { try inner.read() }
+    func write(_ data: Data) throws { try inner.write(data) }
+    func write(_ data: Data, expected: Data?) throws {
+        Thread.sleep(forTimeInterval: delay)
+        try inner.write(data, expected: expected)
+    }
+    func preserveForRecovery(_ expected: Data) throws -> URL {
+        try inner.preserveForRecovery(expected)
+    }
+    func exists() -> Bool { inner.exists() }
+}
+
 @MainActor final class SessionConcurrencyTests: XCTestCase {
     private func directory() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("SessionConcurrency-\(UUID())")
@@ -144,6 +167,61 @@ private actor SuspendedAuth: UserPresenceAuthenticating {
         XCTAssertTrue(session.isUnlocked)
         XCTAssertFalse(session.isSensitiveUnlocked)
         XCTAssertEqual(session.currentPayload?.items.first?.fields.count, 0)
+    }
+
+    /// A seal that lands while a write is in flight must not leave the in-memory
+    /// CAS baseline behind the disk: every later save would be a false conflict.
+    func testSealDuringWriteKeepsDiskAndMemoryInStep() async throws {
+        let directory = directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let keys = InMemoryKeyStore()
+        let session = VaultSession(
+            storage: SlowWriteStorage(try FileSystemVaultStorage(directory: directory)),
+            keyStore: keys, auth: TestAuth())
+        defer { session.lock() }
+        try await session.createNewVault()
+        try await session.unlockSensitiveItems()
+        try await session.mutate {
+            $0.items.append(
+                VaultItem(
+                    title: "Card",
+                    fields: [VaultField(key: "pin", label: "PIN", value: .text("1234"))],
+                    isSensitive: true))
+        }
+
+        let pending = Task { try await session.mutate { $0.items[0].title = "Card 2" } }
+        try await Task.sleep(for: .milliseconds(80))
+        session.lockSensitiveItems()
+        do {
+            try await pending.value
+            XCTFail("A sealed session must not publish the pre-lock draft")
+        } catch {}
+
+        // The bug left `ciphertext` at the pre-write bytes, so this threw conflict.
+        try await session.mutate { $0.items[0].title = "Card 3" }
+        XCTAssertEqual(session.currentPayload?.items.first?.title, "Card 3")
+        XCTAssertTrue(session.currentPayload?.items.first?.isLocked ?? false)
+    }
+
+    /// Undo takes the same gate as an edit, so a save in flight delays it instead
+    /// of failing with "changed in another session".
+    func testUndoDuringWriteWaitsInsteadOfConflicting() async throws {
+        let directory = directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let session = VaultSession(
+            storage: SlowWriteStorage(try FileSystemVaultStorage(directory: directory)),
+            keyStore: InMemoryKeyStore(), auth: TestAuth())
+        defer { session.lock() }
+        try await session.createNewVault()
+        try await session.mutate { $0.items.append(VaultItem(title: "First")) }
+
+        let pending = Task { try await session.mutate { $0.items.append(VaultItem(title: "Second")) } }
+        try await Task.sleep(for: .milliseconds(80))
+        try await session.undo()
+        _ = try? await pending.value
+
+        XCTAssertNil(session.lastError)
+        XCTAssertFalse(session.currentPayload?.items.contains { $0.title == "Second" } ?? true)
     }
 
     func testFailedCreationDoesNotDeleteStoredKey() async throws {

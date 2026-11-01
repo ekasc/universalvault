@@ -353,15 +353,30 @@ public final class VaultSession: ObservableObject {
             return source
         }
         guard let sensitiveKey else { throw VaultSessionError.itemsLocked }
+        return try Self.sealedPayload(source, key: sensitiveKey)
+    }
+
+    /// Seals every protected item that is still in the clear. Works on a copy, so
+    /// the caller decides what is published; this is what keeps plaintext out of
+    /// backups and out of a restored vault.
+    private static func sealedPayload(
+        _ source: VaultPayload, key: SymmetricKey
+    ) throws -> VaultPayload {
         var sealed = source
         for index in sealed.items.indices {
             let item = sealed.items[index]
             guard item.isSensitive, item.sealedFields == nil else { continue }
-            sealed.items[index].sealedFields = try SensitiveVault.seal(
-                fields: item.fields, key: sensitiveKey)
+            sealed.items[index].sealedFields = try SensitiveVault.seal(fields: item.fields, key: key)
             sealed.items[index].fields = []
         }
         return sealed
+    }
+
+    /// The payload as a backup must carry it: protected items sealed, plaintext
+    /// fields absent. The passphrase is never a substitute for the sensitive key.
+    public func payloadForBackup() throws -> VaultPayload {
+        guard let payload else { throw AuthError.failed("Vault locked") }
+        return try sealedForStorage(payload)
     }
 
     private func openSealedItems() throws {
@@ -395,6 +410,9 @@ public final class VaultSession: ObservableObject {
         try Task.checkCancellation()
         await mutationGate.acquire()
         do {
+            // Cancelled while waiting for the gate: nothing has been written, so
+            // honour the cancellation instead of committing a discarded edit.
+            try Task.checkCancellation()
             let result = try await lockedMutation(update, actionName: actionName)
             await mutationGate.release()
             return result
@@ -414,8 +432,13 @@ public final class VaultSession: ObservableObject {
         let generation = sessionGeneration
         let data = try await mutationWriter.write(
             payload: stored, key: k, to: storage, expected: original)
-        // A lock that landed during the write must not be undone by publishing.
-        guard isUnlocked, sessionGeneration == generation else {
+        // A full lock already cleared the session; the write is on disk either way.
+        guard isUnlocked else { throw VaultSessionError.supersededRequest }
+        if sessionGeneration != generation {
+            // Sealing landed while the write was in flight. The bytes are
+            // committed, so the CAS baseline must move with them; republishing
+            // `p` would put pre-lock plaintext back in memory.
+            self.ciphertext = data
             throw VaultSessionError.supersededRequest
         }
         undoEntries.append(HistoryEntry(name: actionName, payload: previous))
@@ -445,17 +468,35 @@ public final class VaultSession: ObservableObject {
         lockSensitiveItems()
     }
 
-    public func undo() throws { try applyHistory(undo: true) }
-    public func redo() throws { try applyHistory(undo: false) }
+    public func undo() async throws { try await applyHistory(undo: true) }
+    public func redo() async throws { try await applyHistory(undo: false) }
 
-    private func applyHistory(undo: Bool) throws {
+    private func applyHistory(undo: Bool) async throws {
+        await mutationGate.acquire()
+        do {
+            try await lockedHistory(undo: undo)
+            await mutationGate.release()
+        } catch {
+            await mutationGate.release()
+            throw error
+        }
+    }
+
+    private func lockedHistory(undo: Bool) async throws {
         guard isUnlocked, let key, let payload, let ciphertext,
               let entry = (undo ? undoEntries : redoEntries).last else { throw AuthError.failed("No vault change to restore.") }
         do {
             var restored = try entry.payload.validated()
             restored.updatedAt = Date()
-            let data = try VaultCrypto.encrypt(payload: try sealedForStorage(restored), key: key)
-            try storage.write(data, expected: ciphertext)
+            let stored = try sealedForStorage(restored)
+            let generation = sessionGeneration
+            let data = try await mutationWriter.write(
+                payload: stored, key: key, to: storage, expected: ciphertext)
+            guard isUnlocked else { throw VaultSessionError.supersededRequest }
+            if sessionGeneration != generation {
+                self.ciphertext = data
+                throw VaultSessionError.supersededRequest
+            }
             let inverse = HistoryEntry(name: entry.name, payload: payload)
             if undo {
                 undoEntries.removeLast()
@@ -494,11 +535,15 @@ public final class VaultSession: ObservableObject {
                 recoveryKey = SymmetricKey(size: .bits256)
                 try keyStore.storeKey(recoveryKey)
             }
-            let data = try VaultCrypto.encrypt(payload: imported, key: recoveryKey)
+            // A backup written by an older build can carry protected items in the
+            // clear. Seal them under the sensitive key before they reach disk or
+            // memory, using the presence just granted; refuse to store plaintext.
+            let sealed = try sealForRecovery(imported)
+            let data = try VaultCrypto.encrypt(payload: sealed, key: recoveryKey)
             try storage.write(data, expected: previous)
             key = recoveryKey
             ciphertext = data
-            payload = imported
+            payload = sealed
             isUnlocked = true
             sensitiveKey = nil
             isSensitiveUnlocked = false
@@ -513,6 +558,24 @@ public final class VaultSession: ObservableObject {
             if authenticationRequest == request { lastError = error.localizedDescription }
             throw error
         }
+    }
+
+    /// Recovery runs with the vault closed, so the sensitive key is fetched or
+    /// created here rather than taken from an open session.
+    private func sealForRecovery(_ imported: VaultPayload) throws -> VaultPayload {
+        guard imported.items.contains(where: { $0.isSensitive && $0.sealedFields == nil }) else {
+            return imported
+        }
+        let sensitive: SymmetricKey
+        if try keyStore.sensitiveKeyExists() {
+            sensitive = try keyStore.loadSensitiveKey(
+                reason: "Seal protected items from the backup",
+                context: auth.authenticatedContext())
+        } else {
+            sensitive = SymmetricKey(size: .bits256)
+            try keyStore.storeSensitiveKey(sensitive)
+        }
+        return try Self.sealedPayload(imported, key: sensitive)
     }
 
     public func requirePresence(reason: String) async throws {
@@ -538,10 +601,7 @@ public final class VaultSession: ObservableObject {
     nonisolated public static let maximumBackupSize = 64 * 1024 * 1024
 
     public func savePayloadToBackup(passphrase: String) throws -> Data {
-        guard let payload else { throw AuthError.failed("Vault locked") }
-        // Backups carry protected items in their sealed form; the backup
-        // passphrase never becomes a substitute for the sensitive key.
-        return try Self.exportBackup(try sealedForStorage(payload), passphrase: passphrase)
+        try Self.exportBackup(try payloadForBackup(), passphrase: passphrase)
     }
 
     nonisolated public static func exportBackup(_ payload: VaultPayload, passphrase: String) throws -> Data {

@@ -43,6 +43,18 @@ public final class AppState: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
+        // Sealing removes protected fields from the payload. The prepared search
+        // index holds copies, so it must not outlive the seal, whether or not the
+        // palette view happens to be mounted.
+        session.$isSensitiveUnlocked
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.searchIndex = nil
+                self.refreshResults()
+            }
+            .store(in: &cancellables)
+
         if systemIntegration {
             // The app opens the vault at launch; protected items still need
             // Touch ID. A first launch after upgrading from a presence-protected
@@ -121,6 +133,7 @@ public final class AppState: ObservableObject {
     }
 
     public func clearSensitiveState() {
+        searchIndex = nil
         paletteQuery = ""
         paletteResults = []
         paletteSelection = 0
@@ -259,9 +272,9 @@ public final class AppState: ObservableObject {
         }
     }
 
-    public func restoreHistory(undo: Bool) {
+    public func restoreHistory(undo: Bool) async {
         do {
-            if undo { try session.undo() } else { try session.redo() }
+            if undo { try await session.undo() } else { try await session.redo() }
             refreshResults()
         } catch { errorMessage = error.localizedDescription }
     }

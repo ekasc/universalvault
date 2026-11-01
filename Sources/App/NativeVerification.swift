@@ -661,11 +661,11 @@
         // Menu items install an action only when macOS validated them as enabled,
         // which requires opening a menu bar menu this harness cannot do. Undo and
         // redo run through the same AppState entry points the menu uses.
-        state.restoreHistory(undo: true)
+        await state.restoreHistory(undo: true)
         try require(
           state.session.currentPayload?.items.contains { $0.title == "Undo target" } == false,
           "Undo through the menu action path did not remove the item.")
-        state.restoreHistory(undo: false)
+        await state.restoreHistory(undo: false)
         try require(
           state.session.currentPayload?.items.contains { $0.title == "Undo target" } == true,
           "Redo through the menu action path did not restore the item.")

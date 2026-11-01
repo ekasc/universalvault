@@ -265,16 +265,19 @@ struct BackupTransferView: View {
   }
 
   private func export(to url: URL, id: UUID, generation: UUID) {
-    guard isCurrent(id, generation), let payload = session.currentPayload else { return }
+    guard isCurrent(id, generation), session.currentPayload != nil else { return }
     let password = passphrase
     busy = true
     status = nil
     task = Task { @MainActor in
       do {
         guard isCurrent(id, generation) else { return }
+        // Seal protected items before the passphrase-only container is built; the
+        // export must never carry them in the clear just because they were open.
+        let sealed = try session.payloadForBackup()
         let worker = Task.detached(priority: .userInitiated) {
           try Task.checkCancellation()
-          let data = try VaultSession.exportBackup(payload, passphrase: password)
+          let data = try VaultSession.exportBackup(sealed, passphrase: password)
           try Task.checkCancellation()
           return data
         }

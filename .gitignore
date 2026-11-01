@@ -11,3 +11,5 @@ DerivedData/
 *.swp
 *.swo
 *~
+.mirofish/
+swarm/.mirofish/
