@@ -12,4 +12,4 @@ DerivedData/
 *.swo
 *~
 .mirofish/
-swarm/.mirofish/
+swarm/
